@@ -17,7 +17,9 @@ import com.niki914.zafiro.chat.agentic.buildin.impl.ViewImageBuiltin
 import com.niki914.zafiro.chat.agentic.buildin.impl.VirtualDisplayCreateBuiltin
 import com.niki914.zafiro.chat.agentic.buildin.impl.VirtualDisplayDestroyBuiltin
 import com.niki914.zafiro.chat.agentic.buildin.impl.VirtualDisplayListBuiltin
+import com.niki914.zafiro.chat.agentic.buildin.impl.VirtualDisplayMoveAppBuiltin
 import com.niki914.zafiro.chat.agentic.buildin.impl.VirtualDisplayPreviewBuiltin
+import com.niki914.zafiro.chat.agentic.buildin.impl.VirtualDisplayReturnAppBuiltin
 
 class BuiltinToolRegistry(
     private val tools: List<BuiltinTool>,
@@ -48,6 +50,8 @@ class BuiltinToolRegistry(
                 VirtualDisplayListBuiltin(),
                 VirtualDisplayDestroyBuiltin(),
                 VirtualDisplayPreviewBuiltin(),
+                VirtualDisplayMoveAppBuiltin(),
+                VirtualDisplayReturnAppBuiltin(),
                 ViewImageBuiltin(),
             )
         )

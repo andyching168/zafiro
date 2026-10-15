@@ -33,7 +33,9 @@ class BuiltinToolTest {
                 "virtual_display_create",
                 "virtual_display_destroy",
                 "virtual_display_list",
+                "virtual_display_move_app",
                 "virtual_display_preview",
+                "virtual_display_return_app",
             ),
             registry.all().map { it.name }.sorted()
         )

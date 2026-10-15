@@ -21,6 +21,8 @@ object McpToolCatalog {
         "virtual_display_list",
         "virtual_display_destroy",
         "virtual_display_preview",
+        "virtual_display_move_app",
+        "virtual_display_return_app",
     )
 
     private val TOOL_DISPLAY_INFO = mapOf(
@@ -38,6 +40,8 @@ object McpToolCatalog {
         "virtual_display_list" to ("List Virtual Displays" to "List managed background displays"),
         "virtual_display_destroy" to ("Destroy Virtual Display" to "Close a background display"),
         "virtual_display_preview" to ("Preview Virtual Display" to "Capture what a background display shows"),
+        "virtual_display_move_app" to ("Move App to Virtual Display" to "Send a running app to a background display"),
+        "virtual_display_return_app" to ("Return App to Screen" to "Bring an app back to the physical screen"),
         "shell" to ("Shell" to "Local Android persistent shell environment"),
         "ssh" to ("SSH" to "Remote SSH persistent terminal"),
         "execute_python" to ("Execute Python" to "Execute arbitrary Python code in python process"),
