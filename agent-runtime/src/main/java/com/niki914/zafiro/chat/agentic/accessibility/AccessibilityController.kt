@@ -90,6 +90,9 @@ object AccessibilityController {
     private var serviceInstance: IAccessibility? = null
 
     /** 每块屏幕各自一份节点缓存与快照版本：token 只在产生它的那块屏幕上有效。 */
+    /** 目标屏此刻没有可访问窗口（页面切换瞬间常见）；与服务不可用等真正的失败区分开。 */
+    private class NoWindowException(message: String) : RuntimeException(message)
+
     private class DisplayState {
         val nodeCache = ConcurrentHashMap<Int, AccessibilityNodeInfo>()
 
@@ -446,8 +449,7 @@ object AccessibilityController {
             delay(minOf(200L, remaining))
         }
 
-        refreshNodeCache()
-        var previousHash = computeStructuralHash(state)
+        var previousHash = sampleHash(state)
         var previousSampleTime = SystemClock.elapsedRealtime()
 
         while (true) {
@@ -461,11 +463,11 @@ object AccessibilityController {
                 }
             }
             delay(50)
-            refreshNodeCache()
-            val currentHash = computeStructuralHash(state)
+            val currentHash = sampleHash(state)
             val sampleTime = SystemClock.elapsedRealtime()
 
-            if (currentHash == previousHash
+            if (currentHash != null
+                && currentHash == previousHash
                 && lastUiEventTime <= previousSampleTime
                 && sampleTime - lastUiEventTime >= 300L
             ) {
@@ -475,6 +477,19 @@ object AccessibilityController {
             previousHash = currentHash
             previousSampleTime = sampleTime
         }
+    }
+
+    /**
+     * 取一次树的结构哈希。页面切换瞬间目标屏可能短暂没有可访问窗口，这不是失败，
+     * 返回 null 让稳定检测继续等待，直到超时再由最终抓取给出结论。
+     */
+    private suspend fun sampleHash(state: DisplayState): Int? {
+        try {
+            refreshNodeCache()
+        } catch (e: NoWindowException) {
+            return null
+        }
+        return computeStructuralHash(state)
     }
 
     /**
@@ -523,7 +538,7 @@ object AccessibilityController {
         val displayId = currentDisplayId()
         val state = stateFor(displayId)
         val root = serviceInstance!!.windowRootOnDisplay(displayId)
-            ?: throw RuntimeException(
+            ?: throw NoWindowException(
                 if (displayId == PHYSICAL_DISPLAY_ID) "No active window"
                 else "No accessible window on virtual display $displayId (nothing launched there yet, " +
                         "or the app exposes no accessibility tree)"
