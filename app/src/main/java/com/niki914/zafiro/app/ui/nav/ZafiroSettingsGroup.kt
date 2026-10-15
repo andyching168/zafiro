@@ -48,6 +48,11 @@ enum class ZafiroSettingsGroup(
         summaryRes = R.string.ui_settings_mcp_service_summary,
         routeSuffix = "mcp-service",
     ),
+    Gateway(
+        titleRes = R.string.ui_settings_gateway,
+        summaryRes = R.string.ui_settings_gateway_summary,
+        routeSuffix = "gateway",
+    ),
     Takeover(
         titleRes = R.string.ui_settings_takeover,
         summaryRes = R.string.ui_settings_takeover_summary,

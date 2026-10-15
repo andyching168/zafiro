@@ -217,3 +217,25 @@ data class RuntimeMcpServiceConfig(
         )
     }
 }
+
+/**
+ * Zafiro 作为 SelfHostDesktopMCP 远端设备的配置。
+ * [exposedTools] 是本机为 Gateway 单独维护的白名单：默认不含 shell / ssh / python 等高危工具，
+ * 只有用户在设置页显式勾选才会对外；Gateway 协议无权修改它。
+ */
+data class RuntimeGatewayConfig(
+    val enabled: Boolean = false,
+    val url: String = "",
+    val deviceId: String = "",
+    val deviceSecret: String = "",
+    val deviceName: String = "",
+    val autoConnect: Boolean = true,
+    val exposedTools: Set<String> = DEFAULT_EXPOSED_TOOLS,
+    /** 操作会话期间用 root 关闭实体触控（AI 的注入式点击不受影响）；需要 root，默认关闭。 */
+    val lockTouchDuringOperation: Boolean = false,
+) {
+    companion object {
+        val DEFAULT_EXPOSED_TOOLS: Set<String> = RuntimeMcpServiceConfig.DEFAULT_EXPOSED_TOOLS -
+                setOf("shell", "ssh", "execute_python", "py_meta_tools")
+    }
+}

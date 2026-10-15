@@ -1,6 +1,5 @@
 package com.niki914.zafiro.mcp.service
 
-import android.util.Base64
 import com.niki914.logging.Logger
 import com.niki914.zafiro.chat.agentic.AgentTenantContext
 import com.niki914.zafiro.chat.agentic.buildin.BuiltinTool
@@ -28,6 +27,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import java.io.File
+import java.util.Base64
 
 class McpToolAdapter(
     private val builtinRegistry: BuiltinToolRegistry = BuiltinToolRegistry.default(),
@@ -50,10 +50,7 @@ class McpToolAdapter(
             ),
         )
 
-        val exposedTools = builtinRegistry.all().filter { tool ->
-            !tool.name.startsWith("mcp__") &&
-                    config.isToolExposed(tool.name)
-        }
+        val exposedTools = exposedTools(config)
 
         Logger.i(LOG_TAG, "building MCP server with ${exposedTools.size} exposed tools")
 
@@ -71,9 +68,42 @@ class McpToolAdapter(
         return server
     }
 
+    /** 当前配置下对外开放的工具；HTTP MCP 与 Gateway 设备端共用同一份筛选口径。 */
+    fun exposedTools(config: RuntimeMcpServiceConfig): List<BuiltinTool> =
+        builtinRegistry.all().filter { tool ->
+            !tool.name.startsWith("mcp__") && config.isToolExposed(tool.name)
+        } + operationTools
+
+    fun isKnownTool(name: String): Boolean =
+        builtinRegistry.find(name) != null || operationTools.any { it.name == name }
+
+    private val operationTools: List<BuiltinTool> =
+        listOf(PhoneOperationStartTool(), PhoneOperationEndTool())
+
     private suspend fun executeTool(tool: BuiltinTool, request: CallToolRequest): CallToolResult =
+        execute(tool, request.arguments?.toString() ?: "{}")
+
+    suspend fun execute(tool: BuiltinTool, argsJson: String): CallToolResult = try {
+        RemoteOperationTracker.track(abortable = tool !in operationTools) {
+            executeTracked(tool, argsJson)
+        }
+    } catch (e: UserAbortedException) {
+        Logger.i(LOG_TAG, "tool ${tool.name} aborted by user")
+        val body = JsonObject(
+            mapOf(
+                "ok" to JsonPrimitive(false),
+                "code" to JsonPrimitive("USER_ABORTED"),
+                "message" to JsonPrimitive(
+                    "The user pressed stop on the phone, so this action was cancelled. " +
+                            "Decide whether to retry or ask the user what they want."
+                ),
+            )
+        ).toString()
+        CallToolResult(content = listOf(TextContent(text = body)), isError = true)
+    }
+
+    private suspend fun executeTracked(tool: BuiltinTool, argsJson: String): CallToolResult =
         withContext(AgentTenantContext(tenantId)) {
-            val argsJson = request.arguments?.toString() ?: "{}"
             Logger.i(LOG_TAG, "tool invoke start: ${tool.name} args=$argsJson")
             val startTime = System.currentTimeMillis()
 
@@ -162,7 +192,7 @@ class McpToolAdapter(
         if (!file.exists() || !file.canRead()) return null
         return try {
             val bytes = file.readBytes()
-            val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+            val base64 = Base64.getEncoder().encodeToString(bytes)
             ImageContent(data = base64, mimeType = mimeType)
         } catch (e: Exception) {
             Logger.w(LOG_TAG, "failed to read image file $path: ${e.message}")

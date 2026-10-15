@@ -7,10 +7,14 @@ import android.graphics.Path
 import android.os.Build
 import android.os.Bundle
 import android.view.Display
+import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.niki914.logging.Logger
 import com.niki914.zafiro.app.overlay.PointerOverlay
+import com.niki914.zafiro.app.overlay.RemoteOperationController
+import com.niki914.zafiro.app.overlay.RemoteOperationGlowOverlay
+import com.niki914.zafiro.mcp.service.RemoteOperationTracker
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController
 import com.niki914.zafiro.chat.agentic.accessibility.IAccessibility
 
@@ -18,6 +22,7 @@ class ZafiroAccessibilityService : AccessibilityService(), IAccessibility {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        instance = this
         AccessibilityController.setService(this)
         AccessibilityController.clearPointerOverlay()
         val overlay = PointerOverlay()
@@ -37,11 +42,23 @@ class ZafiroAccessibilityService : AccessibilityService(), IAccessibility {
         }
     }
 
+    /** 操作会话进行中，音量下键作为「停止」；其余时间原样放行，不影响正常调音量。 */
+    override fun onKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode != KeyEvent.KEYCODE_VOLUME_DOWN) return false
+        if (!RemoteOperationTracker.sessionActive.value) return false
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            RemoteOperationController.stopFromUser("volume down")
+        }
+        return true
+    }
+
     override fun onInterrupt() {
         // no-op
     }
 
     override fun onDestroy() {
+        instance = null
+        RemoteOperationGlowOverlay.detachNow()
         AccessibilityController.clearPointerOverlay()
         AccessibilityController.clearService()
         super.onDestroy()
@@ -109,7 +126,11 @@ class ZafiroAccessibilityService : AccessibilityService(), IAccessibility {
         })
     }
 
-    private companion object {
+    companion object {
         private const val TAG = "niki914_zafiro_AccessibilityService"
+
+        @Volatile
+        var instance: ZafiroAccessibilityService? = null
+            private set
     }
 }

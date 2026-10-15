@@ -55,10 +55,12 @@ dependencies {
     implementation("com.hashsequence:coil-resvg-android:1.1.2")
     implementation("io.modelcontextprotocol:kotlin-sdk-server:0.14.0")
     implementation("io.ktor:ktor-server-cio:3.5.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
     testImplementation("org.mockito:mockito-core:5.10.0")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }
 
 // ---- Python host-side tests ----

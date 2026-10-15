@@ -85,6 +85,7 @@ private fun settingsSections(): List<SettingsSectionDefinition> {
                 ZafiroSettingsGroup.Actions,
                 ZafiroSettingsGroup.Mcp,
                 ZafiroSettingsGroup.McpService,
+                ZafiroSettingsGroup.Gateway,
             ),
         ),
         SettingsSectionDefinition(

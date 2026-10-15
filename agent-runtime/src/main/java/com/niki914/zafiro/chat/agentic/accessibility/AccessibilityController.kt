@@ -24,6 +24,7 @@ import com.niki914.zafiro.business.permission.PermissionResult
 import com.niki914.zafiro.business.permission.PermissionState
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController.currentVersion
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController.ensureAccessibility
+import com.niki914.zafiro.mcp.service.RemoteOperationTracker
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController.ensureService
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController.nodeCache
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController.refreshNodeCache
@@ -291,9 +292,11 @@ object AccessibilityController {
             ?: return Result.failure(RuntimeException("Accessibility service is not connected."))
 
         val bitmap = try {
-            withTimeoutOrNull(CAPTURE_TIMEOUT_MS) {
-                suspendCancellableCoroutine<Bitmap?> { cont ->
-                    service.captureScreenImage { bitmap -> cont.resume(bitmap) }
+            RemoteOperationTracker.withOverlaysHidden {
+                withTimeoutOrNull(CAPTURE_TIMEOUT_MS) {
+                    suspendCancellableCoroutine<Bitmap?> { cont ->
+                        service.captureScreenImage { bitmap -> cont.resume(bitmap) }
+                    }
                 }
             }
         } catch (e: Exception) {

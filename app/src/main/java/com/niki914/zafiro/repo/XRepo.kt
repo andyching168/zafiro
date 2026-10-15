@@ -47,6 +47,7 @@ object XRepo {
     val mcp: McpApi = McpApi(this)
     val textActions: TextActionApi = TextActionApi(this)
     val mcpService: McpServiceApi = McpServiceApi(this)
+    val gateway: GatewayConfigApi = GatewayConfigApi(this)
     val customPyTools: CustomPyToolApi = CustomPyToolApi(this)
     val builtinTools: BuiltinToolApi = BuiltinToolApi(this)
     val memory: MemoryApi = MemoryApi(this)
@@ -95,6 +96,7 @@ object XRepo {
         turnNotificationEnabledField.flow.value = false
         floatingBallAutoExpandField.flow.value = true
         mcpService.resetForTest()
+        gateway.resetForTest()
         llmConfigs.resetForTest()
     }
 

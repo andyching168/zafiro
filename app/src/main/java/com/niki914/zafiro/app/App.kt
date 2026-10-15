@@ -6,7 +6,11 @@ import androidx.appcompat.app.AppCompatDelegate
 import com.google.android.material.color.DynamicColors
 import com.niki914.logging.Logger
 import com.niki914.xposed.api.util.ContextProvider
+import com.niki914.zafiro.api.GatewayDeviceService
+import com.niki914.zafiro.app.overlay.RemoteOperationController
+import com.niki914.zafiro.app.overlay.RemoteOperationGlowOverlay
 import com.niki914.zafiro.api.McpService
+import com.niki914.zafiro.runtime.service.GatewayConnectionService
 import com.niki914.zafiro.app.conversation.ConversationPersister
 import com.niki914.zafiro.app.conversation.ConversationRepo
 import com.niki914.zafiro.app.crash.CrashRecorder
@@ -25,9 +29,11 @@ import com.niki914.zafiro.runtime.createAppRuntimeBridge
 import com.niki914.zafiro.service.requireService
 import com.niki914.zafiro.settings.RuntimeEnvironment
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -79,6 +85,9 @@ class App : Application() {
         observeFloatingBall()
         observeResidentNotification()
         observeMcpService()
+        observeGatewayDevice()
+        RemoteOperationGlowOverlay.start(this, applicationScope)
+        RemoteOperationController.start(this, applicationScope)
         observeAgentWakeLock()
         TurnNotificationManager.init(this)
     }
@@ -103,6 +112,36 @@ class App : Application() {
                     } else {
                         service.stop()
                     }
+                }
+            }
+        }
+    }
+
+    /**
+     * Gateway 设备端：启用且「启动时自动连接」才在冷启动时拉起；之后配置变化防抖 1s 再重启，
+     * 避免输入框逐字落盘触发反复重连。前台服务只在启用期间存在。
+     */
+    @OptIn(FlowPreview::class)
+    private fun observeGatewayDevice() {
+        applicationScope.launch {
+            val service = requireService<GatewayDeviceService>()
+            val initial = XRepo.gateway.get()
+            if (initial.enabled && initial.autoConnect) {
+                GatewayConnectionService.start(this@App)
+                service.start()
+            }
+            var last = initial
+            XRepo.gateway.configFlow.debounce(1_000).collect { config ->
+                if (config == last) return@collect
+                val wasEnabled = last.enabled
+                last = config
+                if (config.enabled) {
+                    if (!wasEnabled) GatewayConnectionService.start(this@App)
+                    service.stop()
+                    service.start()
+                } else {
+                    service.stop()
+                    GatewayConnectionService.stop(this@App)
                 }
             }
         }

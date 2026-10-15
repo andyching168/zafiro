@@ -2,9 +2,11 @@ package com.niki914.zafiro.app
 
 import android.app.Application
 import android.content.ComponentName
+import android.os.Build
 import com.niki914.xsettings.XSettings
 import com.niki914.zafiro.api.AgentControl
 import com.niki914.zafiro.api.AgentManager
+import com.niki914.zafiro.api.GatewayDeviceService
 import com.niki914.zafiro.api.McpService
 import com.niki914.zafiro.app.conversation.RoomConversationStore_Tmp
 import com.niki914.zafiro.business.agent.AgentManagerImpl
@@ -17,7 +19,11 @@ import com.niki914.zafiro.business.notification.NotificationChannelManager
 import com.niki914.zafiro.business.notification.NotificationChannelManagerImpl
 import com.niki914.zafiro.business.permission.PermissionManager
 import com.niki914.zafiro.business.permission.PermissionManagerImpl
+import com.niki914.zafiro.mcp.gateway.GatewayAgentOptions
+import com.niki914.zafiro.mcp.gateway.GatewayDeviceAgent
+import com.niki914.zafiro.mcp.gateway.GatewayToolBridge
 import com.niki914.zafiro.mcp.service.McpServiceImpl
+import com.niki914.zafiro.mcp.service.McpToolAdapter
 import com.niki914.zafiro.mod.feat.ZafiroAccessibilityService
 import com.niki914.zafiro.repo.XRepo
 import com.niki914.zafiro.repo.XSettingsImpl
@@ -66,5 +72,17 @@ object AppServices {
 
         // MCP 服务：把 Zafiro 的工具暴露成标准 MCP Streamable HTTP 端点
         installService<McpService>(McpServiceImpl { XRepo.mcpService.get() })
+
+        // Gateway 设备端：出站 WSS 连 SelfHostDesktopMCP，工具清单与执行复用同一个 McpToolAdapter
+        installService<GatewayDeviceService>(
+            GatewayDeviceAgent(
+                bridge = GatewayToolBridge(McpToolAdapter()),
+                configProvider = { XRepo.gateway.get() },
+                options = GatewayAgentOptions(
+                    platform = "android-${Build.VERSION.RELEASE}",
+                    hostname = Build.MODEL,
+                ),
+            )
+        )
     }
 }

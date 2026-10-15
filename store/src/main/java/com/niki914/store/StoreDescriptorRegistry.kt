@@ -14,6 +14,7 @@ object StoreDescriptorRegistry {
     const val TOOLS_MCP_SERVERS_ID = "tools.mcp.servers"
     const val TOOLS_TEXT_ACTIONS_ID = "tools.text_actions"
     const val TOOLS_MCP_SERVICE_ID = "tools.mcp.service"
+    const val TOOLS_GATEWAY_ID = "tools.mcp.gateway"
     const val RULES_EXECUTION_ID = "rules.execution"
     const val RULES_TAKEOVER_ID = "rules.takeover"
     const val APP_STATE_ID = "app.state"
@@ -64,6 +65,11 @@ object StoreDescriptorRegistry {
             TOOLS_MCP_SERVICE_ID,
             "settings/tools/mcp/service.json",
             """{"enabled":false,"port":8791,"host":"127.0.0.1","bearerToken":"","exposedTools":["screen_operation_accessibility","screen_operation_shell","screenshot","launch_app","find_installed_apps","open_uri","load_skill","notify","view_image","memory"],"keepScreenOn":true}"""
+        ),
+        StoreDescriptor(
+            TOOLS_GATEWAY_ID,
+            "settings/tools/mcp/gateway.json",
+            """{"enabled":false,"url":"","deviceId":"","deviceSecretEnc":"","deviceName":"","autoConnect":true}"""
         ),
         StoreDescriptor(
             RULES_EXECUTION_ID,
