@@ -3,6 +3,7 @@ package com.niki914.zafiro.chat.agentic.display
 import com.niki914.zafiro.api.ExecutionEnvironment
 import com.niki914.zafiro.api.VirtualDisplayService
 import com.niki914.zafiro.chat.agentic.buildin.BuiltinToolResult
+import com.niki914.zafiro.mcp.service.RemoteOperationTracker
 import com.niki914.zafiro.service.findService
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
@@ -107,7 +108,10 @@ suspend fun <T> withDisplay(
     block: suspend () -> T,
 ): T = when (val resolution = DisplayRouting.resolve(argumentsJson)) {
     is DisplayRouting.Resolution.Rejected -> reject(resolution.rejection)
-    is DisplayRouting.Resolution.Target -> withContext(DisplayTarget(resolution.displayId)) { block() }
+    is DisplayRouting.Resolution.Target -> {
+        RemoteOperationTracker.noteDisplayTarget(resolution.displayId)
+        withContext(DisplayTarget(resolution.displayId)) { block() }
+    }
 }
 
 fun DisplayRejection.toToolFailure(): BuiltinToolResult =

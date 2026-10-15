@@ -18,12 +18,13 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
- * 外部 MCP 操作会话期间的触控锁编排：会话开始且用户启用该选项时上锁并心跳续期，
- * 会话结束/停止/熄屏时放行。停止入口：音量下键（无障碍按键过滤）、电源键（熄屏）、
+ * 外部 MCP 操作会话期间的触控锁编排：会话进行中、用户启用该选项，且 AI 最近确实在操作实体屏时才上锁
+ * （全程在背景虚拟屏上操作则从不上锁），会话结束/停止/熄屏时放行。停止入口：音量下键（无障碍按键过滤）、电源键（熄屏）、
  * 客户端调用 phone_operation_end。
  */
 object RemoteOperationController {
     private const val TAG = "niki914_zafiro_RemoteOperationController"
+    private const val POLL_MS = 250L
 
     @OptIn(ExperimentalCoroutinesApi::class)
     fun start(context: Context, scope: CoroutineScope) {
@@ -49,12 +50,28 @@ object RemoteOperationController {
                 .collectLatest { lockOn ->
                     if (lockOn) {
                         maybeLocked = true
+                        var locked = false
+                        var lastLockAt = 0L
                         try {
                             while (true) {
-                                val ok = RemoteTouchLock.lock()
-                                RemoteOperationTracker.setTouchLocked(ok)
-                                if (!ok) Logger.w(TAG, "touch lock unavailable (need root + touchscreen node)")
-                                delay(RemoteTouchLock.HEARTBEAT_MS)
+                                val now = System.currentTimeMillis()
+                                if (RemoteOperationTracker.physicalTouchDemand(now)) {
+                                    // 上锁，并按心跳续期 root 侧的放行计时
+                                    if (!locked || now - lastLockAt >= RemoteTouchLock.HEARTBEAT_MS) {
+                                        locked = RemoteTouchLock.lock()
+                                        lastLockAt = now
+                                        RemoteOperationTracker.setTouchLocked(locked)
+                                        if (!locked) {
+                                            Logger.w(TAG, "touch lock unavailable (need root + touchscreen node)")
+                                        }
+                                    }
+                                } else if (locked) {
+                                    // 实体屏操作告一段落（例如 AI 转去虚拟屏）：把屏幕还给用户
+                                    RemoteTouchLock.unlock()
+                                    locked = false
+                                    RemoteOperationTracker.setTouchLocked(false)
+                                }
+                                delay(POLL_MS)
                             }
                         } finally {
                             RemoteOperationTracker.setTouchLocked(false)

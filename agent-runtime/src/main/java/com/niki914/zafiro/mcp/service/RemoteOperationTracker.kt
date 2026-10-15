@@ -36,6 +36,9 @@ object RemoteOperationTracker {
     private const val ABORT_NEXT_VALID_MS = 60_000L
     private const val HIDE_SETTLE_MS = 150L
 
+    /** 距最近一次实体屏操作多久内仍视为「AI 正在操作实体屏」，要覆盖相邻两次操作间模型思考的空档。 */
+    const val PHYSICAL_ACTION_WINDOW_MS = 20_000L
+
     private val running = AtomicInteger(0)
     private val capturing = AtomicInteger(0)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -43,6 +46,7 @@ object RemoteOperationTracker {
     private val inflight = ConcurrentHashMap.newKeySet<Deferred<*>>()
     private val userAborted = ConcurrentHashMap.newKeySet<Deferred<*>>()
     private val abortNextUntil = AtomicLong(0L)
+    private val lastPhysicalActionAt = AtomicLong(0L)
 
     private val lock = Any()
     private var sessionTtlMs = DEFAULT_SESSION_TTL_MS
@@ -126,7 +130,23 @@ object RemoteOperationTracker {
         endSession()
     }
 
+    /**
+     * 屏幕工具解析出目标屏幕后调用。只有针对实体屏（Display 0）的操作才会让触控锁有意义；
+     * 全程在虚拟屏上操作时这里永远不会被点亮，触控锁也就不会动作。
+     */
+    fun noteDisplayTarget(displayId: Int) {
+        if (displayId == 0) lastPhysicalActionAt.set(System.currentTimeMillis())
+    }
+
+    /** 此刻是否有理由挡住实体屏的误触：会话进行中，且最近确实在操作实体屏。 */
+    fun physicalTouchDemand(now: Long = System.currentTimeMillis()): Boolean {
+        if (!_sessionActive.value) return false
+        val last = lastPhysicalActionAt.get()
+        return last != 0L && now - last <= PHYSICAL_ACTION_WINDOW_MS
+    }
+
     fun beginSession(ttlMs: Long = DEFAULT_SESSION_TTL_MS) {
+        lastPhysicalActionAt.set(0L)
         synchronized(lock) {
             sessionTtlMs = ttlMs
             session = true
@@ -139,6 +159,7 @@ object RemoteOperationTracker {
     }
 
     fun endSession() {
+        lastPhysicalActionAt.set(0L)
         synchronized(lock) {
             session = false
             watchdog?.cancel()

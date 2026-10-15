@@ -77,4 +77,30 @@ class RemoteOperationTrackerTest {
         // 被豁免的调用不消耗那一次拒绝
         assertTrue(runCatching { RemoteOperationTracker.track { "x" } }.exceptionOrNull() is UserAbortedException)
     }
+
+    @Test
+    fun touchLockIsOnlyWantedWhileTheAiIsActuallyOnThePhysicalScreen() {
+        val now = System.currentTimeMillis()
+        // 没有会话：不挡
+        RemoteOperationTracker.noteDisplayTarget(0)
+        assertFalse(RemoteOperationTracker.physicalTouchDemand(now))
+
+        RemoteOperationTracker.beginSession()
+        try {
+            // 会话刚开始、还没有任何实体屏操作：不挡（虚拟屏全程不应触发触控锁）
+            assertFalse(RemoteOperationTracker.physicalTouchDemand(now))
+            RemoteOperationTracker.noteDisplayTarget(7)
+            assertFalse(RemoteOperationTracker.physicalTouchDemand(now))
+
+            // 一旦操作实体屏：要挡；超过窗口没有再操作：放回给用户
+            RemoteOperationTracker.noteDisplayTarget(0)
+            assertTrue(RemoteOperationTracker.physicalTouchDemand(System.currentTimeMillis()))
+            val later = System.currentTimeMillis() + RemoteOperationTracker.PHYSICAL_ACTION_WINDOW_MS + 1
+            assertFalse(RemoteOperationTracker.physicalTouchDemand(later))
+        } finally {
+            RemoteOperationTracker.endSession()
+        }
+        // 会话结束后不残留需求
+        assertFalse(RemoteOperationTracker.physicalTouchDemand(System.currentTimeMillis()))
+    }
 }

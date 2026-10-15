@@ -644,7 +644,7 @@
     <string name="gateway_tools_warning">这里与「MCP 服务」页相互独立。开启 shell / ssh / Python 意味着任何能访问你的 Gateway 的客户端都可以在本机执行代码，请谨慎。</string>
     <string name="gateway_section_operation">操作期间</string>
     <string name="gateway_lock_touch_title">操作期间锁定触控（需要 root）</string>
-    <string name="gateway_lock_touch_summary">外部客户端调用 phone_operation_start 后，关闭实体触摸以防误触；按音量下键或电源键可立即停止并取消当前操作。</string>
+    <string name="gateway_lock_touch_summary">外部客户端调用 phone_operation_start 且 AI 正在操作实体屏时，关闭实体触摸以防误触；全程在背景虚拟屏上操作则不会锁定。按音量下键或电源键可立即停止并取消当前操作。</string>
     <string name="remote_operation_stop_hint">AI 正在操作 · 按音量下键停止</string>
     <string name="ui_settings_ai_environment">AI 执行环境</string>
     <string name="ui_settings_ai_environment_summary">让 AI 在背景虚拟屏上操作，不占用实体屏幕</string>
