@@ -17,6 +17,10 @@ object McpToolCatalog {
         "notify",
         "view_image",
         "memory",
+        "virtual_display_create",
+        "virtual_display_list",
+        "virtual_display_destroy",
+        "virtual_display_preview",
     )
 
     private val TOOL_DISPLAY_INFO = mapOf(
@@ -30,6 +34,10 @@ object McpToolCatalog {
         "notify" to ("System Notification" to "Post notifications to the Android status bar"),
         "view_image" to ("View Image" to "Read and inspect image files from storage"),
         "memory" to ("Agent Memory" to "Store and recall persistent memory facts"),
+        "virtual_display_create" to ("Create Virtual Display" to "Create a background display for AI to work on"),
+        "virtual_display_list" to ("List Virtual Displays" to "List managed background displays"),
+        "virtual_display_destroy" to ("Destroy Virtual Display" to "Close a background display"),
+        "virtual_display_preview" to ("Preview Virtual Display" to "Capture what a background display shows"),
         "shell" to ("Shell" to "Local Android persistent shell environment"),
         "ssh" to ("SSH" to "Remote SSH persistent terminal"),
         "execute_python" to ("Execute Python" to "Execute arbitrary Python code in python process"),

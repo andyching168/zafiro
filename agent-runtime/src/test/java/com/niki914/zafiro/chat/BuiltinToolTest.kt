@@ -30,6 +30,10 @@ class BuiltinToolTest {
                 "shell",
                 "ssh",
                 "view_image",
+                "virtual_display_create",
+                "virtual_display_destroy",
+                "virtual_display_list",
+                "virtual_display_preview",
             ),
             registry.all().map { it.name }.sorted()
         )

@@ -14,6 +14,10 @@ import com.niki914.zafiro.chat.agentic.buildin.impl.ScreenshotBuiltin
 import com.niki914.zafiro.chat.agentic.buildin.impl.ShellBuiltin
 import com.niki914.zafiro.chat.agentic.buildin.impl.SshBuiltin
 import com.niki914.zafiro.chat.agentic.buildin.impl.ViewImageBuiltin
+import com.niki914.zafiro.chat.agentic.buildin.impl.VirtualDisplayCreateBuiltin
+import com.niki914.zafiro.chat.agentic.buildin.impl.VirtualDisplayDestroyBuiltin
+import com.niki914.zafiro.chat.agentic.buildin.impl.VirtualDisplayListBuiltin
+import com.niki914.zafiro.chat.agentic.buildin.impl.VirtualDisplayPreviewBuiltin
 
 class BuiltinToolRegistry(
     private val tools: List<BuiltinTool>,
@@ -40,6 +44,10 @@ class BuiltinToolRegistry(
                 ScreenOperationAccessibilityBuiltin(),
                 ScreenOperationShellBuiltin(),
                 ScreenshotBuiltin(),
+                VirtualDisplayCreateBuiltin(),
+                VirtualDisplayListBuiltin(),
+                VirtualDisplayDestroyBuiltin(),
+                VirtualDisplayPreviewBuiltin(),
                 ViewImageBuiltin(),
             )
         )

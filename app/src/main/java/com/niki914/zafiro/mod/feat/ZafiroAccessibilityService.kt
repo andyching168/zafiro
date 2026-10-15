@@ -10,6 +10,7 @@ import android.view.Display
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import com.niki914.logging.Logger
 import com.niki914.zafiro.app.overlay.PointerOverlay
 import com.niki914.zafiro.app.overlay.RemoteOperationController
@@ -68,6 +69,29 @@ class ZafiroAccessibilityService : AccessibilityService(), IAccessibility {
 
     override val windowRoot: AccessibilityNodeInfo?
         get() = rootInActiveWindow
+
+    /**
+     * rootInActiveWindow 是全局的「当前活动窗口」，虚拟屏上有活动窗口时它指向虚拟屏的应用。
+     * 因此每块屏幕都只从属于它自己的窗口里选根节点；Display 0 仅在活动窗口确实属于 Display 0 时沿用旧行为。
+     */
+    override fun windowRootOnDisplay(displayId: Int): AccessibilityNodeInfo? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return if (displayId == Display.DEFAULT_DISPLAY) rootInActiveWindow else null
+        }
+        val windows = getWindowsOnAllDisplays().get(displayId)
+        if (displayId == Display.DEFAULT_DISPLAY) {
+            val active = rootInActiveWindow
+            val activeId = active?.window?.id
+            if (active != null && activeId != null && windows?.any { it.id == activeId } != false) {
+                return active
+            }
+        }
+        if (windows == null) return null
+        val apps = windows.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+        val window = apps.firstOrNull { it.isFocused } ?: apps.firstOrNull { it.isActive } ?: apps.firstOrNull()
+            ?: return null
+        return window.root
+    }
 
     override fun performAction(
         node: AccessibilityNodeInfo,

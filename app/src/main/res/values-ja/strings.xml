@@ -646,4 +646,27 @@
     <string name="gateway_lock_touch_title">Lock touch during operation (root)</string>
     <string name="gateway_lock_touch_summary">After a client calls phone_operation_start, physical touch is disabled to prevent accidental input. Press Volume Down or Power to stop and cancel the current action.</string>
     <string name="remote_operation_stop_hint">AI is operating · press Volume Down to stop</string>
+    <string name="ui_settings_ai_environment">AI environment</string>
+    <string name="ui_settings_ai_environment_summary">Let the AI work on a background virtual display</string>
+    <string name="ai_env_section_mode">Environment</string>
+    <string name="ai_env_background_title">Background virtual display mode</string>
+    <string name="ai_env_background_summary">When on, AI screen tools without an explicit screen act on the virtual display instead of the physical one. If no virtual display is available they fail; they never fall back to the physical screen. Requires root or Shizuku.</string>
+    <string name="ai_env_section_display">Virtual display</string>
+    <string name="ai_env_state_title">Status</string>
+    <string name="ai_env_state_stopped">Not created</string>
+    <string name="ai_env_state_starting">Starting…</string>
+    <string name="ai_env_state_running">Running</string>
+    <string name="ai_env_state_error">Error</string>
+    <string name="ai_env_display_info">Display %1$d · %2$d×%3$d · %4$d dpi</string>
+    <string name="ai_env_create_title">Create virtual display</string>
+    <string name="ai_env_create_summary">Then the AI can open apps and operate them on that screen</string>
+    <string name="ai_env_close_title">Close virtual display</string>
+    <string name="ai_env_close_summary">Destroys the display and every app running on it, and releases resources</string>
+    <string name="ai_env_section_task">Task</string>
+    <string name="ai_env_task_title">AI task</string>
+    <string name="ai_env_task_running">Running</string>
+    <string name="ai_env_task_idle">Idle</string>
+    <string name="ai_env_stop_title">Stop task</string>
+    <string name="ai_env_stop_summary">Cancels in-flight tool calls; if none are running, the next request fails once so the agent can decide how to continue</string>
+    <string name="ai_env_section_preview">Virtual display view</string>
 </resources>

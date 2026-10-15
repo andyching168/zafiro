@@ -22,11 +22,9 @@ import com.niki914.zafiro.business.permission.Permission
 import com.niki914.zafiro.business.permission.PermissionManager
 import com.niki914.zafiro.business.permission.PermissionResult
 import com.niki914.zafiro.business.permission.PermissionState
-import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController.currentVersion
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController.ensureAccessibility
 import com.niki914.zafiro.mcp.service.RemoteOperationTracker
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController.ensureService
-import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController.nodeCache
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController.refreshNodeCache
 import com.niki914.zafiro.chat.agentic.buildin.BuiltinToolResult
 import com.niki914.zafiro.chat.agentic.buildin.ScreenOperationError
@@ -38,6 +36,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
+import com.niki914.zafiro.api.VirtualDisplayService
+import com.niki914.zafiro.chat.agentic.display.PHYSICAL_DISPLAY_ID
+import com.niki914.zafiro.chat.agentic.display.currentDisplayId
+import com.niki914.zafiro.service.findService
 import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -54,6 +56,13 @@ import android.graphics.Rect as AndroidRect
  */
 interface IAccessibility {
     val windowRoot: AccessibilityNodeInfo?
+
+    /**
+     * 指定屏幕上的前台应用窗口根节点。Display 0 即 [windowRoot]；其它屏幕走
+     * `getWindowsOnAllDisplays()`，取不到返回 null（调用方必须据此报错，不得回落到 Display 0）。
+     */
+    fun windowRootOnDisplay(displayId: Int): AccessibilityNodeInfo? =
+        if (displayId == 0) windowRoot else null
     fun performAction(node: AccessibilityNodeInfo, action: Int, text: String?): Boolean
     fun dispatchGesture(
         startX: Float,
@@ -79,12 +88,22 @@ object AccessibilityController {
     // 保持英文原样，不资源化。
 
     private var serviceInstance: IAccessibility? = null
-    private val nodeCache = ConcurrentHashMap<Int, AccessibilityNodeInfo>()
 
-    /** Current version string for screen snapshot staleness tracking. */
-    @Volatile
-    var currentVersion: String = ""
-        private set
+    /** 每块屏幕各自一份节点缓存与快照版本：token 只在产生它的那块屏幕上有效。 */
+    private class DisplayState {
+        val nodeCache = ConcurrentHashMap<Int, AccessibilityNodeInfo>()
+
+        @Volatile
+        var version: String = ""
+    }
+
+    private val displayStates = ConcurrentHashMap<Int, DisplayState>()
+
+    private fun stateFor(displayId: Int): DisplayState =
+        displayStates.getOrPut(displayId) { DisplayState() }
+
+    private fun inputCommand(displayId: Int): String =
+        if (displayId == PHYSICAL_DISPLAY_ID) "input" else "input -d $displayId"
 
     /** Timestamp of the last UI-significant accessibility event (ms, [SystemClock.elapsedRealtime]). */
     @Volatile
@@ -115,6 +134,12 @@ object AccessibilityController {
      * or refresh its auto-hide timeout if it is already displayed.
      */
     fun ensurePointerShown() {
+        ensurePointerShownFor(PHYSICAL_DISPLAY_ID)
+    }
+
+    /** 指针光标画在实体屏上，只在目标是实体屏时才显示，避免虚拟屏坐标被画到用户眼前。 */
+    fun ensurePointerShownFor(displayId: Int) {
+        if (displayId != PHYSICAL_DISPLAY_ID) return
         val overlay = pointerOverlay ?: return
         if (overlay.isShowing) {
             overlay.keepAlive()
@@ -159,7 +184,8 @@ object AccessibilityController {
 
     fun clearService() {
         serviceInstance = null
-        nodeCache.clear()
+        displayStates.values.forEach { it.nodeCache.clear() }
+        displayStates.clear()
     }
 
     /** Called from [ZafiroAccessibilityService.onAccessibilityEvent] on UI-significant events. */
@@ -349,11 +375,13 @@ object AccessibilityController {
      * 2. Obtains the root node from [IAccessibility.rootInActiveWindow].
      * 3. Reads display metrics via [Context] and the current foreground package.
      * 4. Formats the tree with [TreeFormatter.format] into YAML.
-     * 5. Rebuilds [nodeCache] via DFS so indices match the YAML output.
+     * 5. Rebuilds `DisplayState.nodeCache` via DFS so indices match the YAML output.
      *
      * @return [ScreenSnapshot] containing the YAML string and node count, or failure.
      */
     suspend fun captureScreen(): Result<ScreenSnapshot> {
+        val displayId = currentDisplayId()
+        val state = stateFor(displayId)
         val ctx = try {
             refreshNodeCache()
         } catch (e: Exception) {
@@ -361,17 +389,17 @@ object AccessibilityController {
             return Result.failure(e)
         }
 
-        ensurePointerShown()
+        ensurePointerShownFor(displayId)
 
         val yaml = TreeFormatter.format(
             ctx.root,
             ctx.widthPixels,
             ctx.heightPixels,
             ctx.appPackage,
-            currentVersion
+            state.version
         )
 
-        if (nodeCache.size <= 1) {
+        if (state.nodeCache.size <= 1) {
             return Result.failure(
                 RuntimeException(
                     "No accessibility nodes found in the current window. " +
@@ -382,7 +410,7 @@ object AccessibilityController {
             )
         }
 
-        return Result.success(ScreenSnapshot(yaml, currentVersion, nodeCache.size))
+        return Result.success(ScreenSnapshot(yaml, state.version, state.nodeCache.size))
     }
 
     /**
@@ -409,6 +437,7 @@ object AccessibilityController {
      * is exceeded.
      */
     suspend fun waitForStable(settleTimeoutMs: Long): Result<ScreenSnapshot> {
+        val state = stateFor(currentDisplayId())
         val startTime = SystemClock.elapsedRealtime()
 
         // Minimum 200ms dwell to let post-action events arrive, capped at remaining deadline.
@@ -418,7 +447,7 @@ object AccessibilityController {
         }
 
         refreshNodeCache()
-        var previousHash = computeStructuralHash()
+        var previousHash = computeStructuralHash(state)
         var previousSampleTime = SystemClock.elapsedRealtime()
 
         while (true) {
@@ -433,7 +462,7 @@ object AccessibilityController {
             }
             delay(50)
             refreshNodeCache()
-            val currentHash = computeStructuralHash()
+            val currentHash = computeStructuralHash(state)
             val sampleTime = SystemClock.elapsedRealtime()
 
             if (currentHash == previousHash
@@ -449,15 +478,15 @@ object AccessibilityController {
     }
 
     /**
-     * Computes a version-independent structural hash of the current [nodeCache].
+     * Computes a version-independent structural hash of the current `DisplayState.nodeCache`.
      *
      * The hash covers node count, per-node class name, bounds, text, content
      * description, and key boolean flags — enough to detect meaningful tree
      * changes without paying YAML serialization cost.
      */
-    private fun computeStructuralHash(): Int {
-        var hash = nodeCache.size
-        nodeCache.entries.sortedBy { it.key }.forEach { (index, node) ->
+    private fun computeStructuralHash(state: DisplayState): Int {
+        var hash = state.nodeCache.size
+        state.nodeCache.entries.sortedBy { it.key }.forEach { (index, node) ->
             hash = 31 * hash + index
             hash = 31 * hash + (node.className?.toString().orEmpty().hashCode())
             hash = 31 * hash + (node.text?.toString().orEmpty().hashCode())
@@ -483,7 +512,7 @@ object AccessibilityController {
      * 1. Calls [ensureService] (throws on failure).
      * 2. Obtains the root node from [IAccessibility.rootInActiveWindow].
      * 3. Reads display metrics via [Context] and the current foreground package.
-     * 4. Rebuilds [nodeCache] via DFS so indices match TreeFormatter's allocation order.
+     * 4. Rebuilds `DisplayState.nodeCache` via DFS so indices match TreeFormatter's allocation order.
      *
      * @return [ScreenContext] containing root node, display dimensions, and app package.
      * @throws RuntimeException if the service is unavailable or there is no active window.
@@ -491,39 +520,57 @@ object AccessibilityController {
     private suspend fun refreshNodeCache(): ScreenContext {
         ensureService().getOrElse { throw it }
 
-        val root = serviceInstance!!.windowRoot
-            ?: throw RuntimeException("No active window")
+        val displayId = currentDisplayId()
+        val state = stateFor(displayId)
+        val root = serviceInstance!!.windowRootOnDisplay(displayId)
+            ?: throw RuntimeException(
+                if (displayId == PHYSICAL_DISPLAY_ID) "No active window"
+                else "No accessible window on virtual display $displayId (nothing launched there yet, " +
+                        "or the app exposes no accessibility tree)"
+            )
 
-        val ctx = ContextProvider.await()
-        val dm = ctx.resources.displayMetrics
-        cachedScreenWidth = dm.widthPixels
-        cachedScreenHeight = dm.heightPixels
+        val (width, height) = displaySize(displayId)
+        if (displayId == PHYSICAL_DISPLAY_ID) {
+            cachedScreenWidth = width
+            cachedScreenHeight = height
+        }
         val appPkg = root.packageName?.toString() ?: "unknown"
 
-        rebuildCache(root)
+        rebuildCache(state, root)
 
-        currentVersion = nextVersion()
-        return ScreenContext(root, dm.widthPixels, dm.heightPixels, appPkg)
+        state.version = nextVersion()
+        return ScreenContext(root, width, height, appPkg)
+    }
+
+    /** 虚拟屏用它自己的尺寸，而不是实体屏的显示度量。 */
+    private suspend fun displaySize(displayId: Int): Pair<Int, Int> {
+        if (displayId != PHYSICAL_DISPLAY_ID) {
+            findService<VirtualDisplayService>()?.managedDisplay(displayId)?.let {
+                return it.width to it.height
+            }
+        }
+        val dm = ContextProvider.await().resources.displayMetrics
+        return dm.widthPixels to dm.heightPixels
     }
 
     /**
-     * Rebuilds [nodeCache] with a full DFS index of the entire [root] tree.
+     * Rebuilds `DisplayState.nodeCache` with a full DFS index of the entire [root] tree.
      *
      * Indices are assigned depth-first, parent-before-child, matching
      * [TreeFormatter]'s allocation order. The cache holds every node, even
      * those that may be pruned from the YAML output.
      */
-    private fun rebuildCache(root: AccessibilityNodeInfo) {
-        nodeCache.clear()
+    private fun rebuildCache(state: DisplayState, root: AccessibilityNodeInfo) {
+        state.nodeCache.clear()
         val counter = AtomicInteger(0)
-        indexTree(root, counter)
+        indexTree(state, root, counter)
     }
 
-    private fun indexTree(node: AccessibilityNodeInfo, counter: AtomicInteger) {
+    private fun indexTree(state: DisplayState, node: AccessibilityNodeInfo, counter: AtomicInteger) {
         val index = counter.getAndIncrement()
-        nodeCache[index] = node
+        state.nodeCache[index] = node
         for (i in 0 until node.childCount) {
-            node.getChild(i)?.let { indexTree(it, counter) }
+            node.getChild(i)?.let { indexTree(state, it, counter) }
         }
     }
 
@@ -558,13 +605,12 @@ object AccessibilityController {
             return Result.failure(e)
         }
 
-        val ctx = ContextProvider.await()
-        val screenW = ctx.resources.displayMetrics.widthPixels
-        val screenH = ctx.resources.displayMetrics.heightPixels
+        val state = stateFor(currentDisplayId())
+        val (screenW, screenH) = displaySize(currentDisplayId())
 
         val lowerKw = keywords.map { it.lowercase() }
 
-        val matches = nodeCache.entries.mapNotNull { (index, node) ->
+        val matches = state.nodeCache.entries.mapNotNull { (index, node) ->
             val text = node.text?.toString() ?: ""
             val desc = node.contentDescription?.toString() ?: ""
             val combined = "$text $desc".lowercase()
@@ -584,12 +630,12 @@ object AccessibilityController {
         if (matches.size > limit) {
             sb.append(" # truncated: max_results($limit), total_hits: ${matches.size}")
         }
-        sb.append("\nversion: \"$currentVersion\"")
+        sb.append("\nversion: \"${state.version}\"")
         sb.append("\nnodes:\n")
 
         for ((index, node) in results) {
             sb.append("  - ")
-            sb.append(formatSearchResultNode(index, node, screenW, screenH, currentVersion))
+            sb.append(formatSearchResultNode(index, node, screenW, screenH, state.version))
             sb.append("\n")
         }
 
@@ -641,7 +687,7 @@ object AccessibilityController {
      * Executes a node-level action (click, long-click, scroll, set-text).
      *
      * Parses the [token] to extract version and index, validates the version
-     * against [currentVersion], and performs the action via accessibility
+     * against `DisplayState.version`, and performs the action via accessibility
      * with automatic shell fallback for non-SET_TEXT actions.
      */
     suspend fun executeNodeAction(
@@ -665,25 +711,29 @@ object AccessibilityController {
             )
         }
 
-        if (st.version != currentVersion) {
+        val displayId = currentDisplayId()
+        val state = stateFor(displayId)
+        if (st.version != state.version) {
             return BuiltinToolResult.failure(
                 "VERSION_MISMATCH",
-                "Token version '${st.version}' does not match current version '$currentVersion'. " +
+                "Token version '${st.version}' does not match current version '${state.version}'. " +
                         "The snapshot has been refreshed — use screen_operation_accessibility " +
                         "with read or search to get a fresh version and indices, " +
                         "then assemble new tokens as {version}_{i}."
             )
         }
 
-        val node = nodeCache[st.index]
+        val node = state.nodeCache[st.index]
             ?: return BuiltinToolResult.failure(
                 "NODE_NOT_FOUND", "Node ${st.index} not found in cache"
             )
 
-        // Fly pointer to node centre before acting
-        val nodeRect = AndroidRect()
-        node.getBoundsInScreen(nodeRect)
-        pointerOverlay?.animateTo(nodeRect.centerX().toFloat(), nodeRect.centerY().toFloat())
+        // Fly pointer to node centre before acting (physical display only)
+        if (displayId == PHYSICAL_DISPLAY_ID) {
+            val nodeRect = AndroidRect()
+            node.getBoundsInScreen(nodeRect)
+            pointerOverlay?.animateTo(nodeRect.centerX().toFloat(), nodeRect.centerY().toFloat())
+        }
 
         return executeAccessibilityAction(node, st.index, action, text)
     }
@@ -737,10 +787,11 @@ object AccessibilityController {
                     )
                 }
 
+                val input = inputCommand(currentDisplayId())
                 val result = if (action == NodeAction.LONG_CLICK) {
-                    runShellCommand("input swipe $newCx $newCy $newCx $newCy 1500")
+                    runShellCommand("$input swipe $newCx $newCy $newCx $newCy 1500")
                 } else {
-                    runShellCommand("input tap $newCx $newCy")
+                    runShellCommand("$input tap $newCx $newCy")
                 }
                 if (!result.success) {
                     return BuiltinToolResult.failure(
@@ -753,7 +804,7 @@ object AccessibilityController {
             }
 
             NodeAction.SCROLL_FORWARD -> {
-                val result = runShellCommand("input swipe $cx $cy $cx ${cy - 200} 300")
+                val result = runShellCommand("${inputCommand(currentDisplayId())} swipe $cx $cy $cx ${cy - 200} 300")
                 if (!result.success) {
                     return BuiltinToolResult.failure(
                         result.errorCode ?: ScreenOperationError.SHELL_FAILED.code,
@@ -764,7 +815,7 @@ object AccessibilityController {
             }
 
             NodeAction.SCROLL_BACKWARD -> {
-                val result = runShellCommand("input swipe $cx $cy $cx ${cy + 200} 300")
+                val result = runShellCommand("${inputCommand(currentDisplayId())} swipe $cx $cy $cx ${cy + 200} 300")
                 if (!result.success) {
                     return BuiltinToolResult.failure(
                         result.errorCode ?: ScreenOperationError.SHELL_FAILED.code,
@@ -833,6 +884,14 @@ object AccessibilityController {
             )
         }
 
+        val displayId = currentDisplayId()
+        if (displayId != PHYSICAL_DISPLAY_ID) {
+            // dispatchGesture 只作用于实体屏；虚拟屏统一走带 -d 的 shell 注入
+            return executeShellSwipe(
+                startX.toInt(), startY.toInt(), endX.toInt(), endY.toInt(), duration,
+            )
+        }
+
         // Fly pointer along the swipe path before executing
         pointerOverlay?.showSwipe(startX, startY, endX, endY, duration)
 
@@ -854,7 +913,7 @@ object AccessibilityController {
                 "SERVICE_UNAVAILABLE", e.message ?: "Service unavailable"
             )
         }
-        val result = runShellCommand("input tap $x $y")
+        val result = runShellCommand("${inputCommand(currentDisplayId())} tap $x $y")
         if (!result.shellAvailable) {
             return BuiltinToolResult.failure(
                 "SHELL_NOT_AVAILABLE", "Shell not available (root, shizuku, user all failed)"
@@ -878,7 +937,7 @@ object AccessibilityController {
                 "SERVICE_UNAVAILABLE", e.message ?: "Service unavailable"
             )
         }
-        val result = runShellCommand("input swipe $x $y $x $y 1500")
+        val result = runShellCommand("${inputCommand(currentDisplayId())} swipe $x $y $x $y 1500")
         if (!result.shellAvailable) {
             return BuiltinToolResult.failure(
                 "SHELL_NOT_AVAILABLE", "Shell not available (root, shizuku, user all failed)"
@@ -908,7 +967,9 @@ object AccessibilityController {
                 "SERVICE_UNAVAILABLE", e.message ?: "Service unavailable"
             )
         }
-        val result = runShellCommand("input swipe $startX $startY $endX $endY $duration")
+        val result = runShellCommand(
+            "${inputCommand(currentDisplayId())} swipe $startX $startY $endX $endY $duration"
+        )
         if (!result.shellAvailable) {
             return BuiltinToolResult.failure(
                 "SHELL_NOT_AVAILABLE", "Shell not available (root, shizuku, user all failed)"
@@ -941,7 +1002,9 @@ object AccessibilityController {
                 "SERVICE_UNAVAILABLE", e.message ?: "Service unavailable"
             )
         }
-        val actionId = when (keyCode) {
+        val displayId = currentDisplayId()
+        // 全局动作（返回/主页/最近任务…）永远作用于实体屏，虚拟屏只能用带 -d 的按键注入
+        val actionId = if (displayId != PHYSICAL_DISPLAY_ID) null else when (keyCode) {
             4 -> GLOBAL_ACTION_BACK
             3 -> GLOBAL_ACTION_HOME
             187 -> GLOBAL_ACTION_RECENTS
@@ -970,7 +1033,7 @@ object AccessibilityController {
             }
         }
 
-        val result = runShellCommand("input keyevent $keyCode")
+        val result = runShellCommand("${inputCommand(displayId)} keyevent $keyCode")
         if (!result.shellAvailable) {
             return BuiltinToolResult.failure(
                 "SHELL_NOT_AVAILABLE", "Shell not available (root, shizuku, user all failed)"

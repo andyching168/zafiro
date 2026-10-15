@@ -8,6 +8,8 @@ import com.niki914.zafiro.api.AgentControl
 import com.niki914.zafiro.api.AgentManager
 import com.niki914.zafiro.api.GatewayDeviceService
 import com.niki914.zafiro.api.McpService
+import com.niki914.zafiro.api.VirtualDisplayService
+import com.niki914.zafiro.chat.agentic.display.VirtualDisplayManager
 import com.niki914.zafiro.app.conversation.RoomConversationStore_Tmp
 import com.niki914.zafiro.business.agent.AgentManagerImpl
 import com.niki914.zafiro.business.agent.ConversationStore_Tmp
@@ -72,6 +74,9 @@ object AppServices {
 
         // MCP 服务：把 Zafiro 的工具暴露成标准 MCP Streamable HTTP 端点
         installService<McpService>(McpServiceImpl { XRepo.mcpService.get() })
+
+        // 背景虚拟屏：shell 辅助进程持有 VirtualDisplay，工具按 display_id 路由
+        installService<VirtualDisplayService>(VirtualDisplayManager())
 
         // Gateway 设备端：出站 WSS 连 SelfHostDesktopMCP，工具清单与执行复用同一个 McpToolAdapter
         installService<GatewayDeviceService>(

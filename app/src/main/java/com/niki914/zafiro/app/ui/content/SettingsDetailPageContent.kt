@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import com.niki914.uikit.infra.nav.pageViewModel
+import com.niki914.zafiro.app.ui.content.display.AiEnvironmentSettingsContent
 import com.niki914.zafiro.app.ui.content.mcp.GatewaySettingsContent
 import com.niki914.zafiro.app.ui.content.mcp.McpServiceSettingsContent
 import com.niki914.zafiro.app.ui.content.mcp.McpSettingsContent
@@ -87,6 +88,11 @@ fun SettingsDetailPageContent(
 
     if (group == ZafiroSettingsGroup.McpService) {
         McpServiceSettingsContent()
+        return
+    }
+
+    if (group == ZafiroSettingsGroup.AiEnvironment) {
+        AiEnvironmentSettingsContent()
         return
     }
 

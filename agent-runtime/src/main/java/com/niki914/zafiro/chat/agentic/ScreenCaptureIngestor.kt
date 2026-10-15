@@ -2,9 +2,14 @@ package com.niki914.zafiro.chat.agentic
 
 import android.graphics.Bitmap
 import com.niki914.logging.Logger
+import com.niki914.zafiro.api.VirtualDisplayService
+import com.niki914.zafiro.chat.agentic.display.PHYSICAL_DISPLAY_ID
+import com.niki914.zafiro.chat.agentic.display.currentDisplayId
+import com.niki914.zafiro.service.findService
 import com.niki914.zafiro.chat.agentic.ScreenCaptureIngestor.captureAndIngest
 import com.niki914.zafiro.chat.agentic.ScreenCaptureIngestor.captureForTool
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController
+import com.niki914.zafiro.chat.agentic.image.ImageCodec
 import com.niki914.zafiro.chat.agentic.image.IngestError
 import com.niki914.zafiro.chat.agentic.image.IngestResult
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +71,11 @@ object ScreenCaptureIngestor {
             return ToolCaptureResult.Err(Stage.CODEC_UNAVAILABLE, "Image codec is not available.")
         }
 
+        val displayId = currentDisplayId()
+        if (displayId != PHYSICAL_DISPLAY_ID) {
+            return runVirtual(displayId, codec)
+        }
+
         AccessibilityController.ensureAccessibility().onFailure { error ->
             Logger.w(TAG, "ensureAccessibility failed: ${error.message}")
             return ToolCaptureResult.Err(
@@ -104,6 +114,25 @@ object ScreenCaptureIngestor {
             }
         } finally {
             bitmap.recycle()
+        }
+    }
+
+    /** 虚拟屏的画面由持有它的辅助进程直接给出；不走无障碍截屏（那只覆盖实体屏）。 */
+    private suspend fun runVirtual(displayId: Int, codec: ImageCodec): ToolCaptureResult {
+        val service = findService<VirtualDisplayService>()
+            ?: return ToolCaptureResult.Err(
+                Stage.CAPTURE_FAILED, "Virtual display service is not available."
+            )
+        val frame = service.capture(displayId).getOrElse { error ->
+            Logger.w(TAG, "virtual capture failed: ${error.message}")
+            return ToolCaptureResult.Err(
+                Stage.CAPTURE_FAILED,
+                error.message ?: "Virtual display capture failed."
+            )
+        }
+        return when (val result = withContext(Dispatchers.IO) { codec.ingestBytes(frame.bytes, frame.mimeType) }) {
+            is IngestResult.Ok -> ToolCaptureResult.Ok(result)
+            is IngestResult.Err -> ToolCaptureResult.IngestErr(result.error)
         }
     }
 

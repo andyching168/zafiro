@@ -646,4 +646,27 @@
     <string name="gateway_lock_touch_title">操作期间锁定触控（需要 root）</string>
     <string name="gateway_lock_touch_summary">外部客户端调用 phone_operation_start 后，关闭实体触摸以防误触；按音量下键或电源键可立即停止并取消当前操作。</string>
     <string name="remote_operation_stop_hint">AI 正在操作 · 按音量下键停止</string>
+    <string name="ui_settings_ai_environment">AI 执行环境</string>
+    <string name="ui_settings_ai_environment_summary">让 AI 在背景虚拟屏上操作，不占用实体屏幕</string>
+    <string name="ai_env_section_mode">执行环境</string>
+    <string name="ai_env_background_title">背景虚拟屏模式</string>
+    <string name="ai_env_background_summary">开启后，未指定屏幕的 AI 屏幕工具会操作虚拟屏而不是实体屏；虚拟屏不可用时直接报错，不会改去操作实体屏。需要 root 或 Shizuku。</string>
+    <string name="ai_env_section_display">虚拟屏</string>
+    <string name="ai_env_state_title">状态</string>
+    <string name="ai_env_state_stopped">未创建</string>
+    <string name="ai_env_state_starting">启动中…</string>
+    <string name="ai_env_state_running">运行中</string>
+    <string name="ai_env_state_error">出错</string>
+    <string name="ai_env_display_info">Display %1$d · %2$d×%3$d · %4$d dpi</string>
+    <string name="ai_env_create_title">创建虚拟屏</string>
+    <string name="ai_env_create_summary">创建后可让 AI 在这块屏幕上打开应用并操作</string>
+    <string name="ai_env_close_title">关闭虚拟屏</string>
+    <string name="ai_env_close_summary">销毁虚拟屏及其上运行的全部应用，并释放资源</string>
+    <string name="ai_env_section_task">任务</string>
+    <string name="ai_env_task_title">AI 任务</string>
+    <string name="ai_env_task_running">执行中</string>
+    <string name="ai_env_task_idle">空闲</string>
+    <string name="ai_env_stop_title">停止任务</string>
+    <string name="ai_env_stop_summary">取消正在执行的工具调用；没有在途调用时，下一次请求会先失败一次，由 Agent 决定如何继续</string>
+    <string name="ai_env_section_preview">虚拟屏画面</string>
 </resources>

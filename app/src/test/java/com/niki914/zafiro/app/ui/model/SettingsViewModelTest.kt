@@ -20,6 +20,7 @@ class SettingsViewModelTest {
                 ZafiroSettingsGroup.Mcp,
                 ZafiroSettingsGroup.McpService,
                 ZafiroSettingsGroup.Gateway,
+                ZafiroSettingsGroup.AiEnvironment,
                 ZafiroSettingsGroup.About,
             )
         )

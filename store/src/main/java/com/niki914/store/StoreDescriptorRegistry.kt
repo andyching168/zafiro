@@ -64,7 +64,7 @@ object StoreDescriptorRegistry {
         StoreDescriptor(
             TOOLS_MCP_SERVICE_ID,
             "settings/tools/mcp/service.json",
-            """{"enabled":false,"port":8791,"host":"127.0.0.1","bearerToken":"","exposedTools":["screen_operation_accessibility","screen_operation_shell","screenshot","launch_app","find_installed_apps","open_uri","load_skill","notify","view_image","memory"],"keepScreenOn":true}"""
+            """{"enabled":false,"port":8791,"host":"127.0.0.1","bearerToken":"","exposedTools":["screen_operation_accessibility","screen_operation_shell","screenshot","launch_app","find_installed_apps","open_uri","load_skill","notify","view_image","memory","virtual_display_create","virtual_display_list","virtual_display_destroy","virtual_display_preview"],"keepScreenOn":true}"""
         ),
         StoreDescriptor(
             TOOLS_GATEWAY_ID,

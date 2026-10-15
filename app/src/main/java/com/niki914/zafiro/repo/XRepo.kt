@@ -92,6 +92,7 @@ object XRepo {
         alwaysShowMessageActionsField.flow.value = true
         voiceAssistantIsolatedSessionField.flow.value = true
         floatingBallEnabledField.flow.value = false
+        backgroundDisplayModeField.flow.value = false
         residentNotificationEnabledField.flow.value = false
         turnNotificationEnabledField.flow.value = false
         floatingBallAutoExpandField.flow.value = true
@@ -435,6 +436,19 @@ object XRepo {
     suspend fun floatingBallEnabled(): Boolean = floatingBallEnabledField.get()
 
     suspend fun setFloatingBallEnabled(value: Boolean) = floatingBallEnabledField.set(value)
+
+    /** AI 执行环境（背景虚拟屏模式）的进程内热更新通道。 */
+    private val backgroundDisplayModeField = ReactiveAppStateField(
+        default = false,
+        select = { backgroundDisplayMode },
+        update = { copy(backgroundDisplayMode = it) },
+    )
+    val backgroundDisplayModeSetting: MutableStateFlow<Boolean>
+        get() = backgroundDisplayModeField.flow
+
+    suspend fun backgroundDisplayMode(): Boolean = backgroundDisplayModeField.get()
+
+    suspend fun setBackgroundDisplayMode(value: Boolean) = backgroundDisplayModeField.set(value)
 
     /** 常驻通知栏开关的进程内热更新通道 */
     private val residentNotificationEnabledField = ReactiveAppStateField(

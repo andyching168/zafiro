@@ -6,7 +6,9 @@ import androidx.appcompat.app.AppCompatDelegate
 import com.google.android.material.color.DynamicColors
 import com.niki914.logging.Logger
 import com.niki914.xposed.api.util.ContextProvider
+import com.niki914.zafiro.api.ExecutionEnvironment
 import com.niki914.zafiro.api.GatewayDeviceService
+import com.niki914.zafiro.api.VirtualDisplayService
 import com.niki914.zafiro.app.overlay.RemoteOperationController
 import com.niki914.zafiro.app.overlay.RemoteOperationGlowOverlay
 import com.niki914.zafiro.api.McpService
@@ -86,6 +88,7 @@ class App : Application() {
         observeResidentNotification()
         observeMcpService()
         observeGatewayDevice()
+        observeExecutionEnvironment()
         RemoteOperationGlowOverlay.start(this, applicationScope)
         RemoteOperationController.start(this, applicationScope)
         observeAgentWakeLock()
@@ -113,6 +116,19 @@ class App : Application() {
                         service.stop()
                     }
                 }
+            }
+        }
+    }
+
+    /** 「AI 执行环境」设置 → 虚拟屏服务；服务是进程内单例，工具读它决定默认屏幕。 */
+    private fun observeExecutionEnvironment() {
+        applicationScope.launch {
+            val service = requireService<VirtualDisplayService>()
+            XRepo.backgroundDisplayMode()
+            XRepo.backgroundDisplayModeSetting.collect { background ->
+                service.setEnvironment(
+                    if (background) ExecutionEnvironment.BackgroundVirtual else ExecutionEnvironment.Physical
+                )
             }
         }
     }

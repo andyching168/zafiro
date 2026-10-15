@@ -53,6 +53,11 @@ enum class ZafiroSettingsGroup(
         summaryRes = R.string.ui_settings_gateway_summary,
         routeSuffix = "gateway",
     ),
+    AiEnvironment(
+        titleRes = R.string.ui_settings_ai_environment,
+        summaryRes = R.string.ui_settings_ai_environment_summary,
+        routeSuffix = "ai-environment",
+    ),
     Takeover(
         titleRes = R.string.ui_settings_takeover,
         summaryRes = R.string.ui_settings_takeover_summary,

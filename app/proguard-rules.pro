@@ -116,3 +116,6 @@
     java.lang.Object writeReplace();
     java.lang.Object readResolve();
 }
+
+# 虚拟屏服务端由 root/Shizuku 经 app_process 按类名拉起，不能被重命名或裁掉
+-keep class com.niki914.zafiro.vdisplay.server.** { *; }

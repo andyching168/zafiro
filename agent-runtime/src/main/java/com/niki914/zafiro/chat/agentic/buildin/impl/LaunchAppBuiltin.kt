@@ -4,7 +4,13 @@ import android.content.Context
 import android.content.Intent
 import com.niki914.logging.Logger
 import com.niki914.xposed.api.util.ContextProvider
+import com.niki914.zafiro.api.VirtualDisplayService
 import com.niki914.zafiro.chat.agentic.buildin.BuiltinTool
+import com.niki914.zafiro.chat.agentic.display.PHYSICAL_DISPLAY_ID
+import com.niki914.zafiro.chat.agentic.display.currentDisplayId
+import com.niki914.zafiro.chat.agentic.display.toToolFailure
+import com.niki914.zafiro.chat.agentic.display.withDisplay
+import com.niki914.zafiro.service.findService
 import com.niki914.zafiro.chat.agentic.buildin.BuiltinToolRequest
 import com.niki914.zafiro.chat.agentic.buildin.BuiltinToolResult
 import com.niki914.zafiro.chat.agentic.device.AppInfo
@@ -32,7 +38,13 @@ class LaunchAppBuiltin : BuiltinTool() {
 
     override val inputSchemaJson: String? get() = LAUNCH_APP_SCHEMA
 
-    override suspend fun invoke(request: BuiltinToolRequest): BuiltinToolResult {
+    override suspend fun invoke(request: BuiltinToolRequest): BuiltinToolResult =
+        withDisplay(
+            argumentsJson = request.argumentsJson,
+            reject = { it.toToolFailure() },
+        ) { launch(request) }
+
+    private suspend fun launch(request: BuiltinToolRequest): BuiltinToolResult {
         val args = try {
             parseArguments(request.argumentsJson)
         } catch (throwable: Throwable) {
@@ -95,7 +107,12 @@ class LaunchAppBuiltin : BuiltinTool() {
         appInfo: AppInfo?,
     ): BuiltinToolResult {
         val context = ContextProvider.await().applicationContext
-        val event = context.startApp(packageName)
+        val displayId = currentDisplayId()
+        val event = if (displayId == PHYSICAL_DISPLAY_ID) {
+            context.startApp(packageName)
+        } else {
+            context.startOnVirtualDisplay(packageName, displayId)
+        }
         val data = linkedMapOf<String, JsonElement>(
             "package_name" to JsonPrimitive(packageName),
         )
@@ -116,6 +133,18 @@ class LaunchAppBuiltin : BuiltinTool() {
                 data = JsonObject(data),
             )
         }
+    }
+
+    /** 在受管虚拟屏启动；失败就是失败，不会改去实体屏启动。 */
+    private suspend fun Context.startOnVirtualDisplay(packageName: String, displayId: Int): LaunchEvent {
+        val component = packageManager.getLaunchIntentForPackage(packageName)?.component?.flattenToString()
+            ?: return LaunchEvent.Failed("No launcher activity found for package '$packageName'.")
+        val service = findService<VirtualDisplayService>()
+            ?: return LaunchEvent.Failed("Virtual display service is not available.")
+        return service.launch(displayId, component).fold(
+            onSuccess = { LaunchEvent.Launched },
+            onFailure = { LaunchEvent.Failed(it.message ?: "Failed to launch on display $displayId.") },
+        )
     }
 
     private suspend fun Context.startApp(packageName: String): LaunchEvent {
@@ -228,6 +257,10 @@ class LaunchAppBuiltin : BuiltinTool() {
             {
               "type": "object",
               "properties": {
+                "display_id": {
+                  "type": "integer",
+                  "description": "Which screen to act on. Omit for the default (physical screen unless background virtual mode is on). 0 = physical screen; other values must be a virtual display id from virtual_display_list. Tokens/coordinates are only valid on the screen that produced them."
+                },
                 "package_name": {
                   "type": "string",
                   "description": "Exact Android package name to launch, for example com.tencent.mm."

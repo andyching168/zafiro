@@ -212,6 +212,10 @@ data class RuntimeMcpServiceConfig(
             "notify",
             "view_image",
             "memory",
+            "virtual_display_create",
+            "virtual_display_list",
+            "virtual_display_destroy",
+            "virtual_display_preview",
             "shell",
             "ssh",
         )

@@ -69,6 +69,9 @@ internal data class AppStateSettings(
     /** 置顶会话：id + 置顶时刻。数量级 ≤ 20，读取方按会话存在性自行剪枝。 */
     @SerialName("pinned_conversations")
     val pinnedConversations: List<PinnedConversation> = emptyList(),
+    /** AI 执行环境：true = 未指定 display_id 的屏幕工具落到背景虚拟屏；false = 实体屏（默认）。 */
+    @SerialName("background_display_mode")
+    val backgroundDisplayMode: Boolean = false,
     /** 全局输入框草稿文本（跨会话/新建会话保持，冷启动自动恢复）。 */
     @SerialName("draft_text")
     val draftText: String = "",

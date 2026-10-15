@@ -2,6 +2,8 @@ package com.niki914.zafiro.chat.agentic.buildin.impl
 
 import com.niki914.zafiro.chat.agentic.accessibility.AccessibilityController
 import com.niki914.zafiro.chat.agentic.buildin.BuiltinToolRequest
+import com.niki914.zafiro.chat.agentic.display.currentDisplayId
+import com.niki914.zafiro.chat.agentic.display.withDisplay
 import com.niki914.zafiro.chat.agentic.buildin.BuiltinToolResult
 import com.niki914.zafiro.chat.agentic.buildin.ScreenOperationError
 import com.niki914.zafiro.chat.agentic.buildin.TextResultBuiltinTool
@@ -33,8 +35,14 @@ class ScreenOperationShellBuiltin : TextResultBuiltinTool() {
 
     override val inputSchemaJson: String? get() = SCREEN_SHELL_SCHEMA
 
-    override suspend fun invokeText(request: BuiltinToolRequest): TextToolResult {
-        AccessibilityController.ensurePointerShown()
+    override suspend fun invokeText(request: BuiltinToolRequest): TextToolResult =
+        withDisplay(
+            argumentsJson = request.argumentsJson,
+            reject = { TextToolResult.failure(it.code, "${it.message} ${it.hint}") },
+        ) { operate(request) }
+
+    private suspend fun operate(request: BuiltinToolRequest): TextToolResult {
+        AccessibilityController.ensurePointerShownFor(currentDisplayId())
 
         val args = parseArguments(request.argumentsJson).getOrElse { error ->
             val msg = error.message ?: "Invalid arguments JSON"
@@ -126,6 +134,10 @@ class ScreenOperationShellBuiltin : TextResultBuiltinTool() {
             {
               "type": "object",
               "properties": {
+                "display_id": {
+                  "type": "integer",
+                  "description": "Which screen to act on. Omit for the default (physical screen unless background virtual mode is on). 0 = physical screen; other values must be a virtual display id from virtual_display_list. Tokens/coordinates are only valid on the screen that produced them."
+                },
                 "operation": {
                   "type": "string",
                   "description": "Which operation: tap, long_click, swipe, key."

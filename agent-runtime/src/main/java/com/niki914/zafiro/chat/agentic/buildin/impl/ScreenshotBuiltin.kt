@@ -5,6 +5,10 @@ import com.niki914.zafiro.chat.agentic.ScreenCaptureIngestor
 import com.niki914.zafiro.chat.agentic.ScreenCaptureIngestor.Stage
 import com.niki914.zafiro.chat.agentic.ScreenCaptureIngestor.ToolCaptureResult
 import com.niki914.zafiro.chat.agentic.buildin.BuiltinTool
+import com.niki914.zafiro.chat.agentic.display.PHYSICAL_DISPLAY_ID
+import com.niki914.zafiro.chat.agentic.display.currentDisplayId
+import com.niki914.zafiro.chat.agentic.display.toToolFailure
+import com.niki914.zafiro.chat.agentic.display.withDisplay
 import com.niki914.zafiro.chat.agentic.buildin.BuiltinToolRequest
 import com.niki914.zafiro.chat.agentic.buildin.BuiltinToolResult
 import com.niki914.zafiro.chat.agentic.toImageToolResult
@@ -31,8 +35,15 @@ Returns an image reference (path, dimensions, size) on success.
     override val defaultEnabled: Boolean = true
     override val inputSchemaJson: String? = SCHEMA
 
-    override suspend fun invoke(request: BuiltinToolRequest): BuiltinToolResult {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+    override suspend fun invoke(request: BuiltinToolRequest): BuiltinToolResult =
+        withDisplay(
+            argumentsJson = request.argumentsJson,
+            reject = { it.toToolFailure() },
+        ) { capture() }
+
+    private suspend fun capture(): BuiltinToolResult {
+        // 无障碍截屏 API 只覆盖实体屏；虚拟屏的画面来自持有它的辅助进程，不受这条版本限制
+        if (currentDisplayId() == PHYSICAL_DISPLAY_ID && Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             // API 30 之前系统没有无障碍截屏 API，只有特权 shell 的 `screencap` 能拍：
             // 直接把模型指向 shell 工具，别让它在这个工具上反复重试。
             return BuiltinToolResult.failure(
@@ -89,7 +100,12 @@ Returns an image reference (path, dimensions, size) on success.
         private val SCHEMA = """
 {
   "type": "object",
-  "properties": {},
+  "properties": {
+    "display_id": {
+      "type": "integer",
+      "description": "Which screen to capture. Omit for the default (physical screen unless background virtual mode is on). 0 = physical screen; other values must be a virtual display id from virtual_display_list."
+    }
+  },
   "required": []
 }
         """.trimIndent()
