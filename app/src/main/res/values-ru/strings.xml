@@ -623,4 +623,20 @@
     <string name="ai_env_stop_title">Stop task</string>
     <string name="ai_env_stop_summary">Cancels in-flight tool calls; if none are running, the next request fails once so the agent can decide how to continue</string>
     <string name="ai_env_section_preview">Virtual display view</string>
+    <string name="task_monitor_title">Zafiro управляет вашим телефоном</string>
+    <string name="task_monitor_display">Экран %1$d</string>
+    <string name="task_monitor_state_idle">Ожидание</string>
+    <string name="task_monitor_state_running">Выполняется</string>
+    <string name="task_monitor_state_paused">Ожидает подтверждения</string>
+    <string name="task_monitor_state_completed">Завершено</string>
+    <string name="task_monitor_state_failed">Ошибка</string>
+    <string name="task_monitor_state_stopped">Остановлено</string>
+    <string name="task_monitor_waiting_next">Ожидание следующей команды</string>
+    <string name="task_monitor_last_call">Последнее действие: %1$s</string>
+    <string name="task_monitor_no_display">Нет виртуального экрана для просмотра</string>
+    <string name="task_monitor_no_frame">На этом экране пока ничего нет</string>
+    <string name="task_monitor_view_only">Только просмотр</string>
+    <string name="task_monitor_stop_watching">Закрыть просмотр</string>
+    <string name="task_monitor_stop_task">Остановить задачу</string>
+    <string name="task_monitor_stop_remote_hint">Отменяет текущее действие и один раз отклоняет следующий запрос агента.</string>
 </resources>

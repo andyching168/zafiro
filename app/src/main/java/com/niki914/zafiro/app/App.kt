@@ -9,6 +9,8 @@ import com.niki914.xposed.api.util.ContextProvider
 import com.niki914.zafiro.api.ExecutionEnvironment
 import com.niki914.zafiro.api.GatewayDeviceService
 import com.niki914.zafiro.api.VirtualDisplayService
+import com.niki914.zafiro.app.monitor.TaskMonitor
+import com.niki914.zafiro.app.monitor.TaskNotifier
 import com.niki914.zafiro.app.overlay.RemoteOperationController
 import com.niki914.zafiro.app.overlay.RemoteOperationGlowOverlay
 import com.niki914.zafiro.api.McpService
@@ -91,6 +93,8 @@ class App : Application() {
         observeExecutionEnvironment()
         RemoteOperationGlowOverlay.start(this, applicationScope)
         RemoteOperationController.start(this, applicationScope)
+        TaskMonitor.start()
+        TaskNotifier.start(this, applicationScope)
         observeAgentWakeLock()
         TurnNotificationManager.init(this)
     }

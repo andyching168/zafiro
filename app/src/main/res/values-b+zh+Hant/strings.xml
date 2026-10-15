@@ -654,4 +654,20 @@
     <string name="ai_env_stop_title">停止任務</string>
     <string name="ai_env_stop_summary">取消正在執行的工具呼叫；沒有在途呼叫時，下一次請求會先失敗一次，由 Agent 決定如何繼續</string>
     <string name="ai_env_section_preview">虛擬螢幕畫面</string>
+    <string name="task_monitor_title">Zafiro 正在操作手機</string>
+    <string name="task_monitor_display">螢幕 %1$d</string>
+    <string name="task_monitor_state_idle">閒置</string>
+    <string name="task_monitor_state_running">執行中</string>
+    <string name="task_monitor_state_paused">等待確認</string>
+    <string name="task_monitor_state_completed">已完成</string>
+    <string name="task_monitor_state_failed">失敗</string>
+    <string name="task_monitor_state_stopped">已停止</string>
+    <string name="task_monitor_waiting_next">等待下一步指令</string>
+    <string name="task_monitor_last_call">最近操作：%1$s</string>
+    <string name="task_monitor_no_display">沒有可觀察的虛擬螢幕</string>
+    <string name="task_monitor_no_frame">這個螢幕上還沒有畫面</string>
+    <string name="task_monitor_view_only">僅觀察</string>
+    <string name="task_monitor_stop_watching">停止觀察</string>
+    <string name="task_monitor_stop_task">停止任務</string>
+    <string name="task_monitor_stop_remote_hint">取消正在執行的操作，並讓 Agent 的下一個請求失敗一次。</string>
 </resources>

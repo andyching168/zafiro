@@ -14,6 +14,7 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
 
     <queries>
         <package android:name="com.heytap.speechassist" />
@@ -85,6 +86,16 @@
             三个 filter 元素都必需：隐式 intent 需要 category.DEFAULT，text/* 覆盖
             提供富文本选择的宿主。
         -->
+        <activity
+            android:name="com.niki914.zafiro.app.monitor.TaskMonitorActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:label="@string/task_monitor_title" />
+
+        <receiver
+            android:name="com.niki914.zafiro.app.monitor.TaskActionReceiver"
+            android:exported="false" />
+
         <activity
             android:name="com.niki914.zafiro.app.trigger.TextActionActivity"
             android:label="@string/text_action_menu_label"

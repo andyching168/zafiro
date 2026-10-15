@@ -35,6 +35,7 @@ object RemoteOperationTracker {
     const val DEFAULT_SESSION_TTL_MS = 120_000L
     private const val ABORT_NEXT_VALID_MS = 60_000L
     private const val HIDE_SETTLE_MS = 150L
+    private const val ENGAGED_LINGER_MS = 3_000L
 
     /** 距最近一次实体屏操作多久内仍视为「AI 正在操作实体屏」，要覆盖相邻两次操作间模型思考的空档。 */
     const val PHYSICAL_ACTION_WINDOW_MS = 20_000L
@@ -62,6 +63,28 @@ object RemoteOperationTracker {
     /** 客户端显式开启的操作会话（触控锁只跟它走，不跟单次调用走，避免来回闪锁）。 */
     val sessionActive: StateFlow<Boolean> = _sessionActive.asStateFlow()
 
+    private val _lastCall = MutableStateFlow<ToolCallRecord?>(null)
+
+    /** 最近一次屏幕类工具调用（phone_operation_start/end 不计）。 */
+    val lastCall: StateFlow<ToolCallRecord?> = _lastCall.asStateFlow()
+
+    private val _lastVirtualDisplayId = MutableStateFlow<Int?>(null)
+
+    /** AI 最近一次操作的受管虚拟屏，观察界面据此选择要看的屏。 */
+    val lastVirtualDisplayId: StateFlow<Int?> = _lastVirtualDisplayId.asStateFlow()
+
+    private val _sessionEnd = MutableStateFlow<SessionEnd?>(null)
+
+    /** 最近一段显式会话是怎么结束的：客户端 end / 空闲超时，还是用户停止。新会话开始时清空。 */
+    val sessionEnd: StateFlow<SessionEnd?> = _sessionEnd.asStateFlow()
+
+    private val _engaged = MutableStateFlow(false)
+
+    /** [active] 的带尾巴版本：零散调用之间的短暂空档不算「停了」，避免通知与界面抖动。 */
+    val engaged: StateFlow<Boolean> = _engaged.asStateFlow()
+
+    private var lingerJob: Job? = null
+
     private val _overlaysSuppressed = MutableStateFlow(false)
     val overlaysSuppressed: StateFlow<Boolean> = _overlaysSuppressed.asStateFlow()
 
@@ -77,6 +100,27 @@ object RemoteOperationTracker {
     private fun publish() {
         _sessionActive.value = synchronized(lock) { session }
         _active.value = running.get() > 0 || _sessionActive.value
+        if (_active.value) {
+            lingerJob?.cancel()
+            lingerJob = null
+            _engaged.value = true
+        } else if (_engaged.value && lingerJob == null) {
+            lingerJob = scope.launch {
+                delay(ENGAGED_LINGER_MS)
+                lingerJob = null
+                _engaged.value = _active.value
+            }
+        }
+    }
+
+    fun noteCallStarted(toolName: String) {
+        _lastCall.value = ToolCallRecord(toolName, null, CallState.Running, System.currentTimeMillis())
+    }
+
+    fun noteCallFinished(toolName: String, state: CallState) {
+        val previous = _lastCall.value
+        val display = previous?.takeIf { it.toolName == toolName }?.displayId
+        _lastCall.value = ToolCallRecord(toolName, display, state, System.currentTimeMillis())
     }
 
     /**
@@ -127,7 +171,7 @@ object RemoteOperationTracker {
                 it.cancel()
             }
         }
-        endSession()
+        endSession(SessionEndReason.Stopped)
     }
 
     /**
@@ -136,6 +180,8 @@ object RemoteOperationTracker {
      */
     fun noteDisplayTarget(displayId: Int) {
         if (displayId == 0) lastPhysicalActionAt.set(System.currentTimeMillis())
+        else _lastVirtualDisplayId.value = displayId
+        _lastCall.value = _lastCall.value?.let { if (it.state == CallState.Running) it.copy(displayId = displayId) else it }
     }
 
     /** 此刻是否有理由挡住实体屏的误触：会话进行中，且最近确实在操作实体屏。 */
@@ -147,6 +193,7 @@ object RemoteOperationTracker {
 
     fun beginSession(ttlMs: Long = DEFAULT_SESSION_TTL_MS) {
         lastPhysicalActionAt.set(0L)
+        _sessionEnd.value = null
         synchronized(lock) {
             sessionTtlMs = ttlMs
             session = true
@@ -158,9 +205,10 @@ object RemoteOperationTracker {
         publish()
     }
 
-    fun endSession() {
+    fun endSession(reason: SessionEndReason = SessionEndReason.Completed) {
         lastPhysicalActionAt.set(0L)
         synchronized(lock) {
+            if (session) _sessionEnd.value = SessionEnd(reason, System.currentTimeMillis())
             session = false
             watchdog?.cancel()
             watchdog = null

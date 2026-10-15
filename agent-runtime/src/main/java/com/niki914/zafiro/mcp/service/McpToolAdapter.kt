@@ -84,10 +84,20 @@ class McpToolAdapter(
         execute(tool, request.arguments?.toString() ?: "{}")
 
     suspend fun execute(tool: BuiltinTool, argsJson: String): CallToolResult = try {
-        RemoteOperationTracker.track(abortable = tool !in operationTools) {
+        val recorded = tool !in operationTools
+        val result = RemoteOperationTracker.track(abortable = recorded) {
+            if (recorded) RemoteOperationTracker.noteCallStarted(tool.name)
             executeTracked(tool, argsJson)
         }
+        if (recorded) {
+            RemoteOperationTracker.noteCallFinished(
+                tool.name,
+                if (result.isError == true) CallState.Failed else CallState.Ok,
+            )
+        }
+        result
     } catch (e: UserAbortedException) {
+        RemoteOperationTracker.noteCallFinished(tool.name, CallState.Aborted)
         Logger.i(LOG_TAG, "tool ${tool.name} aborted by user")
         val body = JsonObject(
             mapOf(
