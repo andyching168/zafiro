@@ -3,9 +3,11 @@ package com.niki914.zafiro.chat
 import com.niki914.logging.Logger
 import com.niki914.okia.ImageSaver
 import com.niki914.okia.Okia
+import com.niki914.okia.TurnOptions
 import com.niki914.okia.conversation.Conversation
 import com.niki914.okia.conversation.SessionSnapshot
 import com.niki914.okia.error.RetryPolicy
+import com.niki914.okia.event.TurnEvent
 import com.niki914.okia.hooks.Hooks
 import com.niki914.okia.hooks.SerializationHolder
 import com.niki914.okia.loop.RequestLogger
@@ -23,6 +25,7 @@ import com.niki914.zafiro.chat.agentic.AndroidImageLoader
 import com.niki914.zafiro.chat.agentic.python.PyRuntime
 import com.niki914.zafiro.chat.agentic.shell.SessionRegistry
 import com.niki914.zafiro.chat.agentic.shell.TerminalSessionPool
+import com.niki914.zafiro.chat.compaction.ContextPruner
 import com.niki914.zafiro.settings.model.LlmProtocol
 import com.niki914.zafiro.settings.model.RuntimeLlmConfig
 import kotlinx.coroutines.CoroutineScope
@@ -50,7 +53,7 @@ internal class OkiaSessionAssembler(
     private val imageLoader: AndroidImageLoader?,
     private val ensureImageSaver: suspend () -> ImageSaver?,
 ) {
-    private companion object {
+    internal companion object {
         const val LOG_TAG = "niki914_zafiro_OkiaSessionAssembler"
 
         /**
@@ -76,6 +79,19 @@ internal class OkiaSessionAssembler(
                 )
             }
         }
+
+        internal val compactPruningHook = object : Hooks {
+            override suspend fun beforeSerialization(request: SerializationHolder) {
+                val outcome = ContextPruner.prune(request.history)
+                if (outcome.hasCompacted) {
+                    request.write(request.snapshot, outcome.messages, "compact_prune")
+                    Logger.i(
+                        LOG_TAG,
+                        "compactPruningHook pruned: ${request.history.size} -> ${outcome.messages.size} (dropped ${outcome.prunedCount})"
+                    )
+                }
+            }
+        }
     }
 
     var activeSession: Okia? = null
@@ -88,8 +104,8 @@ internal class OkiaSessionAssembler(
 
     val currentConversation: StateFlow<Conversation?> get() = conversationFlow
 
-    var okiaFactory: LLMController.OkiaFactory =
-        LLMController.OkiaFactory { protocol, restore, config ->
+    var okiaFactory: AgentSessionEngine.OkiaFactory =
+        AgentSessionEngine.OkiaFactory { protocol, restore, config ->
             openOkiaWithDefaultProtocol(protocol, restore, config)
         }
 
@@ -100,7 +116,7 @@ internal class OkiaSessionAssembler(
         sessionForwardJob?.cancel()
         sessionForwardJob = null
         conversationFlow.value = null
-        okiaFactory = LLMController.OkiaFactory { protocol, restore, config ->
+        okiaFactory = AgentSessionEngine.OkiaFactory { protocol, restore, config ->
             openOkiaWithDefaultProtocol(protocol, restore, config)
         }
     }
@@ -170,7 +186,8 @@ internal class OkiaSessionAssembler(
             model = config.model
             hooks += killToolResourcesHook
             hooks += fixIncompleteToolCallsHook
-            idleTimeoutSeconds = config.idleTimeoutSeconds ?: LLMController.NO_IDLE_TIMEOUT_SECONDS
+            hooks += compactPruningHook
+            idleTimeoutSeconds = config.idleTimeoutSeconds ?: AgentSessionEngine.NO_IDLE_TIMEOUT_SECONDS
             retryPolicy = RetryPolicy(maxAttempts = config.retryMaxAttempts)
             maxTokens = config.maxTokens
             toolRegistry = this@OkiaSessionAssembler.toolRegistry
@@ -210,6 +227,43 @@ internal class OkiaSessionAssembler(
 
         LlmProtocol.OpenAiResponses -> OpenAIResponsesProtocol()
         LlmProtocol.AnthropicMessages -> AnthropicMessagesProtocol()
+    }
+
+    suspend fun generateSummary(
+        protocol: LlmProtocol,
+        config: ResolvedLlmConfig,
+        systemPrompt: String,
+        userPrompt: String,
+    ): String {
+        val endpoint = config.endpoint.ifBlank { protocolDefaultEndpointFallback(protocol) }
+        val wireProtocol = wireProtocolFor(protocol)
+        val session = Okia.open(wireProtocol) {
+            this.endpoint = endpoint
+            apiKey = config.apiKey
+            model = config.model
+            idleTimeoutSeconds = config.idleTimeoutSeconds ?: AgentSessionEngine.NO_IDLE_TIMEOUT_SECONDS
+            retryPolicy = RetryPolicy(maxAttempts = config.retryMaxAttempts)
+            maxTokens = config.maxTokens
+            thinkingLevel = config.thinkingLevel
+            proxy = config.proxy
+            requestLogger = androidRequestLogger
+            repetitionConfig = config.repetitionSensitivity.toRepetitionConfig()
+        }
+        try {
+            var summary = ""
+            session.send(
+                text = userPrompt,
+                options = TurnOptions(systemPrompt = systemPrompt),
+            ) { event ->
+                if (event is TurnEvent.TurnCompleted) {
+                    summary = event.message.content.filterIsInstance<ContentBlock.Text>()
+                        .joinToString("\n") { it.text }
+                }
+            }
+            return summary
+        } finally {
+            session.close()
+        }
     }
 
     fun validateLlmConfig(config: RuntimeLlmConfig) {

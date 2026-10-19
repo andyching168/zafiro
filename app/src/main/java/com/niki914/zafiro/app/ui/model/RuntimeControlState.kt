@@ -9,6 +9,7 @@ sealed interface RuntimeControlDialog {
     data object IdleTimeout : RuntimeControlDialog
     data object RetryAttempts : RuntimeControlDialog
     data object RepetitionSensitivity : RuntimeControlDialog
+    data object CompactionThreshold : RuntimeControlDialog
 }
 
 data class RuntimeControlUiState(
@@ -16,6 +17,7 @@ data class RuntimeControlUiState(
     val retryMaxAttempts: Int = 3,
     val keepScreenOn: Boolean = true,
     val repetitionSensitivity: RepetitionSensitivity = RepetitionSensitivity.DEFAULT,
+    val compactionThresholdPercent: Int = 70,
     val activeDialog: RuntimeControlDialog? = null,
     val isLoading: Boolean = false,
 )
@@ -25,10 +27,14 @@ sealed interface RuntimeControlIntent {
     data class OpenDialog(val dialog: RuntimeControlDialog) : RuntimeControlIntent
     data object DismissDialog : RuntimeControlIntent
     data class SelectIdleTimeout(val seconds: Long) : RuntimeControlIntent
+    data class ChangeIdleTimeout(val seconds: Long) : RuntimeControlIntent
     data class SelectRetryMaxAttempts(val attempts: Int) : RuntimeControlIntent
+    data class ChangeRetryMaxAttempts(val attempts: Int) : RuntimeControlIntent
     data class ToggleKeepScreenOn(val enabled: Boolean) : RuntimeControlIntent
     data class SelectRepetitionSensitivity(val sensitivity: RepetitionSensitivity) :
         RuntimeControlIntent
+    data class SelectCompactionThreshold(val percent: Int) : RuntimeControlIntent
+    data class ChangeCompactionThreshold(val percent: Int) : RuntimeControlIntent
 }
 
 class RuntimeControlViewModel :
@@ -41,13 +47,21 @@ class RuntimeControlViewModel :
             RuntimeControlIntent.Load -> loadSettings()
             is RuntimeControlIntent.OpenDialog -> updateState { copy(activeDialog = intent.dialog) }
             RuntimeControlIntent.DismissDialog -> updateState { copy(activeDialog = null) }
+            is RuntimeControlIntent.ChangeIdleTimeout ->
+                updateState { copy(idleTimeoutSeconds = intent.seconds) }
             is RuntimeControlIntent.SelectIdleTimeout -> selectIdleTimeout(intent.seconds)
+            is RuntimeControlIntent.ChangeRetryMaxAttempts ->
+                updateState { copy(retryMaxAttempts = intent.attempts) }
             is RuntimeControlIntent.SelectRetryMaxAttempts ->
                 selectRetryMaxAttempts(intent.attempts)
 
             is RuntimeControlIntent.ToggleKeepScreenOn -> toggleKeepScreenOn(intent.enabled)
             is RuntimeControlIntent.SelectRepetitionSensitivity ->
                 selectRepetitionSensitivity(intent.sensitivity)
+            is RuntimeControlIntent.ChangeCompactionThreshold ->
+                updateState { copy(compactionThresholdPercent = sanitizeCompactionThreshold(intent.percent)) }
+            is RuntimeControlIntent.SelectCompactionThreshold ->
+                selectCompactionThreshold(intent.percent)
         }
     }
 
@@ -58,12 +72,14 @@ class RuntimeControlViewModel :
             val retryMaxAttempts = XRepo.llmRetryMaxAttempts()
             val keepScreenOn = XRepo.keepScreenOn()
             val repetitionSensitivity = XRepo.repetitionSensitivity()
+            val compactionThresholdPercent = XRepo.contextCompactionThresholdPercent()
             updateState {
                 copy(
                     idleTimeoutSeconds = idleTimeoutSeconds,
                     retryMaxAttempts = retryMaxAttempts,
                     keepScreenOn = keepScreenOn,
                     repetitionSensitivity = repetitionSensitivity,
+                    compactionThresholdPercent = compactionThresholdPercent,
                     isLoading = false,
                 )
             }
@@ -91,6 +107,16 @@ class RuntimeControlViewModel :
     private suspend fun selectRepetitionSensitivity(sensitivity: RepetitionSensitivity) {
         updateState { copy(repetitionSensitivity = sensitivity, activeDialog = null) }
         XRepo.setRepetitionSensitivity(sensitivity)
+    }
+
+    private suspend fun selectCompactionThreshold(percent: Int) {
+        val sanitized = sanitizeCompactionThreshold(percent)
+        updateState { copy(compactionThresholdPercent = sanitized, activeDialog = null) }
+        XRepo.setContextCompactionThresholdPercent(sanitized)
+    }
+
+    private fun sanitizeCompactionThreshold(percent: Int): Int {
+        return if (percent < 15) 0 else percent.coerceIn(30, 95)
     }
 
     private companion object {

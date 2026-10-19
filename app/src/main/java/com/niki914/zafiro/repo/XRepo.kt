@@ -333,6 +333,10 @@ object XRepo {
         select = { repetitionSensitivity },
         update = { copy(repetitionSensitivity = it) },
     )
+    private val contextCompactionThresholdPercentField = PlainAppStateField(
+        select = { contextCompactionThresholdPercent },
+        update = { copy(contextCompactionThresholdPercent = it) },
+    )
     private val lastNotifiedUpdateVersionField = PlainAppStateField(
         select = { lastNotifiedUpdateVersion },
         update = { copy(lastNotifiedUpdateVersion = it) },
@@ -370,6 +374,12 @@ object XRepo {
 
     suspend fun setRepetitionSensitivity(value: RepetitionSensitivity) =
         repetitionSensitivityField.set(value.wireValue)
+
+    suspend fun contextCompactionThresholdPercent(): Int =
+        contextCompactionThresholdPercentField.get()
+
+    suspend fun setContextCompactionThresholdPercent(value: Int) =
+        contextCompactionThresholdPercentField.set(value)
 
     suspend fun lastNotifiedUpdateVersion(): String = lastNotifiedUpdateVersionField.get()
 

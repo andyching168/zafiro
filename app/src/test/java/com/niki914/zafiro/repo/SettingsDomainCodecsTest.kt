@@ -395,8 +395,8 @@ class SettingsDomainCodecsTest {
     }
 
     @Test
-    fun appStateBlankThemeModeFallsBackToDark() {
-        assertEquals("dark", AppStateSettingsCodec.parse("""{"theme_mode":""}""").themeMode)
+    fun appStateBlankThemeModeFallsBackToLight() {
+        assertEquals("light", AppStateSettingsCodec.parse("""{"theme_mode":""}""").themeMode)
     }
 
     @Test
@@ -418,6 +418,19 @@ class SettingsDomainCodecsTest {
         val root = jsonObject(AppStateSettingsCodec.encode(state))
         assertEquals("zh-CN", root["language_tag"]!!.jsonPrimitive.content)
         assertEquals(true, root["load_last_conversation_on_startup"]!!.jsonPrimitive.boolean)
+    }
+
+    @Test
+    fun appStateCompactionThresholdIsClampedOrPreservesZero() {
+        fun thresholdOf(raw: String) =
+            AppStateSettingsCodec.parse("""{"context_compaction_threshold_percent":$raw}""").contextCompactionThresholdPercent
+
+        assertEquals(0, thresholdOf("0"))
+        assertEquals(30, thresholdOf("10"))
+        assertEquals(30, thresholdOf("-50"))
+        assertEquals(95, thresholdOf("120"))
+        assertEquals(70, thresholdOf("70"))
+        assertEquals(70, thresholdOf("\"invalid\""))
     }
 
     // 保护：手改 tools/mcp/service.json 的 port 绕过设置页校验（1024..65535）。

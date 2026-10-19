@@ -37,6 +37,8 @@
     <string name="ui_home_title">Zafiro</string>
     <string name="ui_home_menu_new_conversation">新对话</string>
     <string name="ui_home_input_placeholder">输入消息...</string>
+    <string name="ui_home_conversation_compacted">对话已压缩</string>
+    <string name="ui_home_conversation_compacting">正在压缩</string>
     <string name="ui_tool_status_called">已调用</string>
     <string name="ui_tool_status_running">执行中</string>
     <string name="ui_tool_status_success">成功</string>
@@ -455,6 +457,10 @@
     <string name="ui_settings_runtime_control_summary">上限、重试与复读检测</string>
     <string name="ui_settings_runtime_group_network">网络</string>
     <string name="ui_settings_runtime_group_stability">稳定性</string>
+    <string name="ui_settings_runtime_group_compaction">上下文压缩</string>
+    <string name="ui_settings_runtime_compaction_threshold">自动压缩阈值</string>
+    <string name="ui_settings_runtime_compaction_threshold_summary">当上下文窗口占用达到设定阈值时自动压缩历史</string>
+    <string name="ui_settings_runtime_compaction_off">关闭</string>
     <string name="ui_settings_runtime_repetition_detection">复读检测</string>
     <string name="ui_settings_runtime_repetition_summary">模型持续重复输出时提前熔断；越严格越灵敏，但也越可能误判正常内容</string>
     <string name="ui_settings_runtime_sensitivity_relaxed">宽松</string>
@@ -478,6 +484,8 @@
     <string name="ui_settings_configure_protocol_hint">切换协议后，请确认端点与协议匹配。</string>
     <string name="ui_settings_configure_thinking_label">思考强度</string>
     <string name="ui_settings_configure_thinking_hint">留空（Provider Default）时使用 Provider 默认行为；过高时若 Provider 拒绝请自行调低。</string>
+    <string name="ui_settings_configure_thinking_start_label">Default</string>
+    <string name="ui_settings_configure_thinking_end_label">Max</string>
     <string name="ui_settings_configure_max_tokens_label">Max Tokens</string>
     <string name="ui_settings_configure_max_tokens_placeholder">例如：200000 或 200k</string>
     <string name="ui_settings_configure_error_max_tokens_invalid">请填写有效数值（支持 k/m/b 后缀），不小于 256</string>
