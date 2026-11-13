@@ -1,3 +1,4 @@
+// githooks:ignore-file file-token-limit
 package com.niki914.zafiro.business.agent
 
 import com.niki914.logging.Logger
@@ -17,13 +18,17 @@ import com.niki914.zafiro.api.model.ConversationId
 import com.niki914.zafiro.api.model.Draft
 import com.niki914.zafiro.api.model.DraftImage
 import com.niki914.zafiro.api.model.isRunning
+import com.niki914.zafiro.api.telemetry.Metrics
 import com.niki914.zafiro.business.agent.AgentImpl.Companion.STATUS_TEXT_THROTTLE_MS
 import com.niki914.zafiro.chat.AgentSessionEngine
+import com.niki914.zafiro.chat.LlmErrorCode
 import com.niki914.zafiro.chat.LlmStreamEvent
 import com.niki914.zafiro.service.findService
 import com.niki914.zafiro.service.requireService
+import com.niki914.zafiro.api.util.runCatchingCancellable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -56,7 +61,10 @@ class AgentImpl(
     val isPersistent: Boolean = true,
 ) : Agent {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val coroutineExceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        Logger.e(LOG_TAG, "Uncaught exception in Agent scope: ${throwable.message}", throwable)
+    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + coroutineExceptionHandler)
 
     /** 持久化端口：仅当 isPersistent == true 时由 app 侧提供并在组合根 install。 */
     private fun store(): ConversationStore_Tmp = requireService()
@@ -76,6 +84,7 @@ class AgentImpl(
     internal val isRoundActive: Boolean get() = roundActive.value
     private var streamJob: Job? = null
     private var roundToken = 0
+    private var roundEndedReportedToken = 0
     private var lastStatusEmitMs = 0L
 
     private var reduced = Reduced(Conversation())
@@ -128,6 +137,16 @@ class AgentImpl(
         draftFlow.value = Draft()
     }
 
+    override fun warmup() {
+        scope.launch {
+            runCatchingCancellable {
+                engine.warmup()
+            }.onFailure { throwable ->
+                Logger.d(LOG_TAG, "agent warmup skipped: ${throwable.message}")
+            }
+        }
+    }
+
     override fun stream(): TurnStart {
         val draft = draftFlow.value
         if (draft.text.isBlank() && draft.images.isEmpty() && draft.files.isEmpty()) {
@@ -149,17 +168,21 @@ class AgentImpl(
             foldWith(ConversationReducer.addCompactingDivider(previousConversation))
             streamJob = scope.launch {
                 try {
-                    ensureConversation(query)
-                    val compacted = engine.compact(force = true)
-                    if (compacted) {
-                        foldWith(ConversationReducer.markCompacted(conversationFlow.value))
-                    } else {
+                    runCatchingCancellable {
+                        ensureConversation(query)
+                        val compacted = engine.compact(force = true)
+                        if (compacted) {
+                            foldWith(ConversationReducer.markCompacted(conversationFlow.value))
+                        } else {
+                            foldWith(Reduced(previousConversation))
+                        }
+                    }.onFailure { throwable ->
                         foldWith(Reduced(previousConversation))
+                        Logger.e(LOG_TAG, "compact round failed", throwable)
                     }
-                } catch (throwable: Throwable) {
+                } catch (e: CancellationException) {
                     foldWith(Reduced(previousConversation))
-                    if (throwable is CancellationException) throw throwable
-                    Logger.e(LOG_TAG, "compact round failed", throwable)
+                    throw e
                 } finally {
                     if (roundToken == token && statusFlow.value !is AgentState.Stopping) {
                         reducedStatus = AgentStateReducer.reset()
@@ -186,30 +209,33 @@ class AgentImpl(
         reducedStatus = AgentStateReducer.startRound()
         emitStatus(reducedStatus.status)
         foldWith(ConversationReducer.startTurn(conversationFlow.value, query, images, files))
+        Metrics.chatTurnStart(hasAttachment = images.isNotEmpty() || files.isNotEmpty())
 
         val token = ++roundToken
         streamJob = scope.launch {
             try {
-                val conversationId = ensureConversation(query)
-                Logger.i(
-                    LOG_TAG,
-                    "round started conversationId=${conversationId.value} queryLength=${query.length}"
-                )
-                engine.stream(query = query, images = contentImages, files = files)
-                    .collect { event ->
-                        fold(event)
+                runCatchingCancellable {
+                    val conversationId = ensureConversation(query)
+                    Logger.i(
+                        LOG_TAG,
+                        "round started conversationId=${conversationId.value} queryLength=${query.length}"
+                    )
+                    engine.stream(query = query, images = contentImages, files = files)
+                        .collect { event ->
+                            fold(event)
+                        }
+                }.onFailure { throwable ->
+                    Logger.e(
+                        LOG_TAG,
+                        "round failed errorType=${throwable::class.simpleName} message=${throwable.message}"
+                    )
+                    val message = throwable.message?.trim()?.takeIf(String::isNotEmpty)
+                    if (message != null) fold(LlmStreamEvent.Error(message = message))
+                    else {
+                        reducedStatus = AgentStateReducer.interrupt(reducedStatus)
+                        emitStatus(reducedStatus.status)
+                        notifyTurnEnd(token, "error_model")
                     }
-            } catch (throwable: Throwable) {
-                if (throwable is CancellationException) throw throwable
-                Logger.e(
-                    LOG_TAG,
-                    "round failed errorType=${throwable::class.simpleName} message=${throwable.message}"
-                )
-                val message = throwable.message?.trim()?.takeIf(String::isNotEmpty)
-                if (message != null) fold(LlmStreamEvent.Error(message = message))
-                else {
-                    reducedStatus = AgentStateReducer.interrupt(reducedStatus)
-                    emitStatus(reducedStatus.status)
                 }
             } finally {
                 if (roundToken == token && statusFlow.value !is AgentState.Stopping) {
@@ -227,6 +253,7 @@ class AgentImpl(
 
     override fun stop() {
         if (!roundActive.value || statusFlow.value is AgentState.Stopping) return
+        notifyTurnEnd(roundToken, "stopped")
 
         activeApproval?.result?.complete(ApprovalDecision.Deny)
 
@@ -263,8 +290,12 @@ class AgentImpl(
         reducedStatus = AgentStateReducer.reset()
         emitStatus(reducedStatus.status)
         scope.launch {
-            engine.stopCurrentRound()
-            engine.resetConversation()
+            runCatchingCancellable {
+                engine.stopCurrentRound()
+                engine.resetConversation()
+            }.onFailure { t ->
+                Logger.w(LOG_TAG, "discard cleanup failed: ${t.message}", t)
+            }
         }
     }
 
@@ -278,10 +309,10 @@ class AgentImpl(
         emitStatus(reducedStatus.status)
         val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         cleanupScope.launch {
-            try {
+            runCatchingCancellable {
                 engine.stopCurrentRound()
                 engine.closeSession()
-            } catch (t: Throwable) {
+            }.onFailure { t ->
                 Logger.w(LOG_TAG, "release session cleanup failed", t)
             }
         }
@@ -324,7 +355,7 @@ class AgentImpl(
         fun attach(approver: Approver) {
             jobs.computeIfAbsent(approver) { app ->
                 scope.launch {
-                    try {
+                    runCatchingCancellable {
                         val decision = app.decide(request)
                         decisions[app] = decision
                         if (decision != ApprovalDecision.Abstain) {
@@ -332,8 +363,7 @@ class AgentImpl(
                         } else {
                             checkAllAbstained()
                         }
-                    } catch (t: Throwable) {
-                        if (t is CancellationException) throw t
+                    }.onFailure {
                         decisions[app] = ApprovalDecision.Abstain
                         checkAllAbstained()
                     }
@@ -411,6 +441,9 @@ class AgentImpl(
 
     /** 退役当前回合的门禁：旧回合的 finally 不再改它（token 已推进）。 */
     private fun releaseRound() {
+        if (roundActive.value) {
+            notifyTurnEnd(roundToken, "stopped")
+        }
         roundToken++
         roundActive.value = false
         activeApproval?.result?.complete(ApprovalDecision.Deny)
@@ -455,6 +488,31 @@ class AgentImpl(
         foldWith(next)
         reducedStatus = AgentStateReducer.reduce(reducedStatus, event)
         publishStatus(reducedStatus.status, event)
+
+        when (event) {
+            LlmStreamEvent.Completed -> {
+                if (statusFlow.value !is AgentState.Stopping) {
+                    notifyTurnEnd(roundToken, "success")
+                }
+            }
+            is LlmStreamEvent.Error -> {
+                if (statusFlow.value !is AgentState.Stopping) {
+                    val status = when (event.code) {
+                        LlmErrorCode.Auth, LlmErrorCode.Quota -> "error_auth_quota"
+                        LlmErrorCode.Transport, LlmErrorCode.IdleTimeout, LlmErrorCode.RetryExhausted -> "error_network"
+                        else -> "error_model"
+                    }
+                    notifyTurnEnd(roundToken, status)
+                }
+            }
+            else -> Unit
+        }
+    }
+
+    private fun notifyTurnEnd(token: Int, status: String) {
+        if (roundEndedReportedToken == token) return
+        roundEndedReportedToken = token
+        Metrics.chatTurnEnd(status)
     }
 
     /**

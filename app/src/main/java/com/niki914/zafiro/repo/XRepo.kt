@@ -1,3 +1,4 @@
+// githooks:ignore-file file-token-limit
 package com.niki914.zafiro.repo
 
 import android.content.Context
@@ -35,6 +36,7 @@ import com.niki914.zafiro.settings.model.RuntimeBuiltinToolSetting as BuiltinToo
 import com.niki914.zafiro.settings.model.RuntimeCustomPyTool as CustomPyTool
 import com.niki914.zafiro.settings.model.RuntimeExecutionRule as ExecutionRule
 import com.niki914.zafiro.settings.model.RuntimeExecutionRuleEnabledMode as ExecutionRuleEnabledMode
+import com.niki914.zafiro.settings.model.RuntimeMaskingRule as MaskingRule
 import com.niki914.zafiro.settings.model.RuntimeMcpServer as McpServer
 import com.niki914.zafiro.settings.model.RuntimeTakeoverRule as TakeoverRule
 import com.niki914.zafiro.settings.model.RuntimeTakeoverRuleValidation as TakeoverRuleValidation
@@ -53,6 +55,7 @@ object XRepo {
     val memory: MemoryApi = MemoryApi(this)
     val web: WebSettingsApi = WebSettingsApi()
     val executionRules: ExecutionRulesApi = ExecutionRulesApi(this)
+    val maskingRules: MaskingRulesApi = MaskingRulesApi(this)
     val takeoverRules: TakeoverRulesApi = TakeoverRulesApi(this)
     val agents: AgentApi = AgentApi(this)
     val skills: SkillApi = SkillApi(this)
@@ -90,12 +93,18 @@ object XRepo {
         // 响应式 flow 是进程内单例状态：重置回声明默认值，测试互不污染。
         keepScreenOnField.flow.value = true
         alwaysShowMessageActionsField.flow.value = true
+        alwaysShowDetailedToolOutputField.flow.value = false
         voiceAssistantIsolatedSessionField.flow.value = true
         floatingBallEnabledField.flow.value = false
         backgroundDisplayModeField.flow.value = false
+        telemetryEnabledField.flow.value = true
         residentNotificationEnabledField.flow.value = false
         turnNotificationEnabledField.flow.value = false
         floatingBallAutoExpandField.flow.value = true
+        floatingBallOpacityPercentField.flow.value = 60
+        floatingBallSubmergedOffsetDpField.flow.value = 8
+        languageTagField.flow.value = ""
+        phoneUseConsentGrantedField.flow.value = false
         mcpService.resetForTest()
         gateway.resetForTest()
         llmConfigs.resetForTest()
@@ -312,11 +321,14 @@ object XRepo {
         update = { copy(lastOpenedConversationId = it) },
         normalize = { it.trim() },
     )
-    private val languageTagField = PlainAppStateField(
+    /** 应用内语言的进程内热更新通道（空串表示跟随系统；app 以外经 XSettings.appLanguageTag 读）。 */
+    private val languageTagField = ReactiveAppStateField(
+        default = "",
         select = { languageTag },
         update = { copy(languageTag = it) },
-        normalize = { it.trim() },
     )
+    val appLanguageTagSetting: MutableStateFlow<String>
+        get() = languageTagField.flow
     private val loadLastConversationOnStartupField = PlainAppStateField(
         select = { loadLastConversationOnStartup },
         update = { copy(loadLastConversationOnStartup = it) },
@@ -357,7 +369,7 @@ object XRepo {
 
     suspend fun languageTag(): String = languageTagField.get()
 
-    suspend fun setLanguageTag(tag: String) = languageTagField.set(tag)
+    suspend fun setLanguageTag(tag: String) = languageTagField.set(tag.trim())
 
     suspend fun loadLastConversationOnStartup(): Boolean = loadLastConversationOnStartupField.get()
 
@@ -420,6 +432,20 @@ object XRepo {
     suspend fun setAlwaysShowMessageActions(value: Boolean) =
         alwaysShowMessageActionsField.set(value)
 
+    /** 总是展示工具详细输出开关的进程内热更新通道：默认关闭（精简模式）。 */
+    private val alwaysShowDetailedToolOutputField = ReactiveAppStateField(
+        default = false,
+        select = { alwaysShowDetailedToolOutput },
+        update = { copy(alwaysShowDetailedToolOutput = it) },
+    )
+    val alwaysShowDetailedToolOutputSetting: MutableStateFlow<Boolean>
+        get() = alwaysShowDetailedToolOutputField.flow
+
+    suspend fun alwaysShowDetailedToolOutput(): Boolean = alwaysShowDetailedToolOutputField.get()
+
+    suspend fun setAlwaysShowDetailedToolOutput(value: Boolean) =
+        alwaysShowDetailedToolOutputField.set(value)
+
     /** 语音助手独享会话开关的进程内热更新通道：读时回填初值，写时同步。默认开启。 */
     private val voiceAssistantIsolatedSessionField = ReactiveAppStateField(
         default = true,
@@ -459,6 +485,18 @@ object XRepo {
     suspend fun backgroundDisplayMode(): Boolean = backgroundDisplayModeField.get()
 
     suspend fun setBackgroundDisplayMode(value: Boolean) = backgroundDisplayModeField.set(value)
+
+    /** 遥测上报开关的进程内热更新通道：读时回填初值，写时同步。 */
+    private val telemetryEnabledField = ReactiveAppStateField(
+        default = true,
+        select = { telemetryEnabled },
+        update = { copy(telemetryEnabled = it) },
+    )
+    val telemetryEnabledSetting: MutableStateFlow<Boolean> get() = telemetryEnabledField.flow
+
+    suspend fun telemetryEnabled(): Boolean = telemetryEnabledField.get()
+
+    suspend fun setTelemetryEnabled(value: Boolean) = telemetryEnabledField.set(value)
 
     /** 常驻通知栏开关的进程内热更新通道 */
     private val residentNotificationEnabledField = ReactiveAppStateField(
@@ -502,6 +540,48 @@ object XRepo {
     suspend fun setFloatingBallAutoExpand(value: Boolean) =
         floatingBallAutoExpandField.set(value)
 
+    /** 悬浮球贴边停靠不透明度百分比的进程内热更新通道（10..100，默认 60）。 */
+    private val floatingBallOpacityPercentField = ReactiveAppStateField(
+        default = 60,
+        select = { floatingBallOpacityPercent },
+        update = { copy(floatingBallOpacityPercent = it) },
+    )
+    val floatingBallOpacityPercentSetting: MutableStateFlow<Int>
+        get() = floatingBallOpacityPercentField.flow
+
+    suspend fun floatingBallOpacityPercent(): Int = floatingBallOpacityPercentField.get()
+
+    suspend fun setFloatingBallOpacityPercent(value: Int) =
+        floatingBallOpacityPercentField.set(value)
+
+    /** 悬浮球贴边收起深度的进程内热更新通道（dp，0..35，默认 8）。 */
+    private val floatingBallSubmergedOffsetDpField = ReactiveAppStateField(
+        default = 8,
+        select = { floatingBallSubmergedOffsetDp },
+        update = { copy(floatingBallSubmergedOffsetDp = it) },
+    )
+    val floatingBallSubmergedOffsetDpSetting: MutableStateFlow<Int>
+        get() = floatingBallSubmergedOffsetDpField.flow
+
+    suspend fun floatingBallSubmergedOffsetDp(): Int = floatingBallSubmergedOffsetDpField.get()
+
+    suspend fun setFloatingBallSubmergedOffsetDp(value: Int) =
+        floatingBallSubmergedOffsetDpField.set(value)
+
+    /** Phone Use（屏幕控制）知情同意状态的进程内热更新通道（app 以外的消费方经 XSettings 读写）。 */
+    private val phoneUseConsentGrantedField = ReactiveAppStateField(
+        default = false,
+        select = { phoneUseConsentGranted },
+        update = { copy(phoneUseConsentGranted = it) },
+    )
+    val phoneUseConsentGrantedSetting: MutableStateFlow<Boolean>
+        get() = phoneUseConsentGrantedField.flow
+
+    suspend fun phoneUseConsentGranted(): Boolean = phoneUseConsentGrantedField.get()
+
+    suspend fun setPhoneUseConsentGranted(value: Boolean) =
+        phoneUseConsentGrantedField.set(value)
+
     /** Markdown 排版缩放比例的进程内热更新通道：基准 1.0f。 */
     private val markdownScaleField = ReactiveAppStateField(
         default = 1.0f,
@@ -532,6 +612,10 @@ object XRepo {
         select = { themeSeedColor },
         update = { copy(themeSeedColor = it) },
     )
+    private val themeStyleField = PlainAppStateField(
+        select = { themeStyle },
+        update = { copy(themeStyle = it) },
+    )
 
     suspend fun themeMode(): String = themeModeField.get()
 
@@ -540,6 +624,10 @@ object XRepo {
     suspend fun themeSeedColor(): String = themeSeedColorField.get()
 
     suspend fun setThemeSeedColor(hex: String) = themeSeedColorField.set(hex)
+
+    suspend fun themeStyle(): String = themeStyleField.get()
+
+    suspend fun setThemeStyle(style: String) = themeStyleField.set(style)
 
     private val pinnedConversationsField = PlainAppStateField(
         select = { pinnedConversations },
@@ -826,6 +914,7 @@ class LlmConfigsApi internal constructor(
                 endpoint = config.endpoint.trim(),
                 model = config.model.trim(),
                 protocol = config.protocol.trim().lowercase(),
+                prompt = config.prompt.trim(),
                 proxy = config.proxy.trim(),
                 createdAt = createdAt,
                 updatedAt = nowMillis,
@@ -1089,6 +1178,81 @@ class ExecutionRulesApi internal constructor(
             EXPLICIT_EMPTY_RULES_JSON
         } else {
             RuleSettingsCodec.encodeExecutionRules(rules)
+        }
+    }
+
+    private companion object {
+        private const val EXPLICIT_EMPTY_RULES_JSON = """{"rules":[],"_explicit":true}"""
+    }
+}
+
+class MaskingRulesApi internal constructor(
+    private val repo: XRepo,
+) {
+    suspend fun list(): List<MaskingRule> {
+        val json = repo.readJson(StoreDescriptorRegistry.RULES_MASKING_ID)
+        if (json == """{"rules":[]}""") {
+            return LocalSettingsDefaults.defaultMaskingRules
+        }
+        return RuleSettingsCodec.parseMaskingRules(json)
+    }
+
+    suspend fun get(id: String): MaskingRule? {
+        return list().firstOrNull { it.id == id }
+    }
+
+    suspend fun save(rule: MaskingRule) {
+        repo.updateJson(StoreDescriptorRegistry.RULES_MASKING_ID) { json ->
+            val rules = RuleSettingsCodec.parseMaskingRules(json)
+            val updated = if (rules.any { it.id == rule.id }) {
+                rules.map { if (it.id == rule.id) rule else it }
+            } else {
+                rules + rule
+            }
+            encodeMaskingRulesForWrite(updated)
+        }
+    }
+
+    suspend fun replace(previousId: String?, rule: MaskingRule) {
+        repo.updateJson(StoreDescriptorRegistry.RULES_MASKING_ID) { json ->
+            val rules = RuleSettingsCodec.parseMaskingRules(json)
+            val withoutPrevious = if (previousId != null && previousId != rule.id) {
+                rules.filterNot { it.id == previousId }
+            } else {
+                rules
+            }
+            val updated = if (withoutPrevious.any { it.id == rule.id }) {
+                withoutPrevious.map { if (it.id == rule.id) rule else it }
+            } else {
+                withoutPrevious + rule
+            }
+            encodeMaskingRulesForWrite(updated)
+        }
+    }
+
+    suspend fun delete(id: String) {
+        repo.updateJson(StoreDescriptorRegistry.RULES_MASKING_ID) { json ->
+            encodeMaskingRulesForWrite(
+                RuleSettingsCodec.parseMaskingRules(json).filterNot { it.id == id },
+            )
+        }
+    }
+
+    suspend fun setEnabled(id: String, enabled: Boolean) {
+        repo.updateJson(StoreDescriptorRegistry.RULES_MASKING_ID) { json ->
+            encodeMaskingRulesForWrite(
+                RuleSettingsCodec.parseMaskingRules(json).map { rule ->
+                    if (rule.id == id) rule.copy(enabled = enabled) else rule
+                },
+            )
+        }
+    }
+
+    private fun encodeMaskingRulesForWrite(rules: List<MaskingRule>): String {
+        return if (rules.isEmpty()) {
+            EXPLICIT_EMPTY_RULES_JSON
+        } else {
+            RuleSettingsCodec.encodeMaskingRules(rules)
         }
     }
 
@@ -1578,9 +1742,5 @@ class BuiltinToolApi internal constructor(
         defaultEnabled: Boolean
     ): Boolean {
         return this[toolName] ?: defaultEnabled
-    }
-
-    private companion object {
-        private const val TERMINAL_TOOL_NAME = "terminal"
     }
 }

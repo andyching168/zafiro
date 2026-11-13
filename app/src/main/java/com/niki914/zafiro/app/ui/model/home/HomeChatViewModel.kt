@@ -1,3 +1,4 @@
+// githooks:ignore-file file-token-limit
 package com.niki914.zafiro.app.ui.model.home
 
 import androidx.lifecycle.viewModelScope
@@ -24,7 +25,11 @@ import com.niki914.zafiro.repo.LlmConfigsDocument
 import com.niki914.zafiro.repo.XRepo
 import com.niki914.zafiro.service.requireService
 import kotlinx.coroutines.CancellableContinuation
-import kotlinx.coroutines.CancellationException
+import com.niki914.zafiro.api.util.Debouncer
+import com.niki914.zafiro.api.util.debouncer
+import com.niki914.zafiro.api.util.runCatchingCancellable
+import com.niki914.zafiro.api.util.tryOrDefault
+import com.niki914.zafiro.api.util.tryIgnore
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
@@ -67,7 +72,7 @@ class HomeChatViewModel internal constructor(
     private val agentManager: AgentManager get() = requireService()
     private val agent: Agent get() = agentManager.main
     private val files: FilesService get() = requireService()
-    private var draftSaveJob: Job? = null
+    private val draftDebouncer: Debouncer = viewModelScope.debouncer(DRAFT_SAVE_DEBOUNCE_MS)
     private var startupRestoreAttempted = false
     private var agentObserveJob: Job? = null
     private var currentBoundAgent: Agent? = null
@@ -87,7 +92,6 @@ class HomeChatViewModel internal constructor(
     /** 正在节流的思考块。 */
     private var pacedThinkingBlockId: String? = null
     private var conversationBeingLoaded: String? = null
-    private val seenThinkingKeys = mutableSetOf<String>()
 
     init {
         observeAgent()
@@ -103,6 +107,7 @@ class HomeChatViewModel internal constructor(
         when (intent) {
             is HomeChatIntent.InputChanged -> onInputChanged(intent.value)
             HomeChatIntent.Send -> sendCurrentInput()
+            HomeChatIntent.Warmup -> agent.warmup()
             is HomeChatIntent.ImageAttached -> attachImage(intent.uri)
             is HomeChatIntent.ImageRemoved -> removeImage(intent.id)
             is HomeChatIntent.FileAttached -> attachFile(intent.uri)
@@ -114,18 +119,20 @@ class HomeChatViewModel internal constructor(
                 loadConversation(intent.id, preferLatestBranch = true)
             is HomeChatIntent.ClearUnread -> clearUnread(intent.conversationId)
             is HomeChatIntent.DeleteConversation -> deleteConversationNow(intent.id)
-            is HomeChatIntent.ToggleToolRun -> toggleToolRun(intent.turnId, intent.runStartIndex)
-            is HomeChatIntent.ToggleToolResult -> toggleToolResult(
-                intent.turnId, intent.runStartIndex, intent.toolIndex,
-            )
-
-            is HomeChatIntent.ToggleThinking -> toggleThinking(intent.turnId, intent.blockIndex)
+            is HomeChatIntent.ToggleActionKey -> toggleActionKey(intent.key, intent.isExpanded)
             is HomeChatIntent.ToggleActionRow -> toggleActionRow(intent.turnId, intent.source)
             is HomeChatIntent.ReGenerateAt -> reGenerateAt(intent.turnId)
             is HomeChatIntent.SwitchTurnBranch -> switchTurnBranch(intent.turnId, intent.delta)
             is HomeChatIntent.ForkAt -> forkAt(intent.turnId)
             is HomeChatIntent.RewindAt -> rewindAt(intent.turnId)
-            is HomeChatIntent.ResolveApproval -> approvalApprover.settle(intent.decision)
+            is HomeChatIntent.ResolveApproval -> {
+                if (intent.decision == ApprovalDecision.Allow &&
+                    uiStateFlow.value.pendingApproval is ApprovalRequest.ScreenControlConsent
+                ) {
+                    viewModelScope.launch { XRepo.setPhoneUseConsentGranted(true) }
+                }
+                approvalApprover.settle(intent.decision)
+            }
             HomeChatIntent.OpenConfigMenu -> {
                 refreshSavedConfigs()
                 updateState { copy(isConfigMenuVisible = true) }
@@ -146,7 +153,7 @@ class HomeChatViewModel internal constructor(
                 val currentId = currentState.currentConversationId
                 if (!currentId.isNullOrBlank()) {
                     viewModelScope.launch {
-                        runCatching {
+                        runCatchingCancellable {
                             conversations.updateConfigId(currentId, intent.id)
                         }.onFailure { throwable ->
                             Logger.w(
@@ -165,7 +172,7 @@ class HomeChatViewModel internal constructor(
     }
 
     private suspend fun refreshSavedConfigs() {
-        runCatching {
+        runCatchingCancellable {
             val document = configDependencies.loadConfigs()
             updateState {
                 copy(
@@ -180,16 +187,25 @@ class HomeChatViewModel internal constructor(
 
     // ── Agent 观察 ──────────────────────────────────────────────────────────
 
+    private fun detachBoundAgent() {
+        agentObserveJob?.cancel()
+        agentObserveJob = null
+        currentBoundAgent?.removeApprover(approvalApprover)
+        currentBoundAgent = null
+    }
+
+    private fun attachBoundAgent(newAgent: Agent) {
+        if (currentBoundAgent === newAgent) return
+        detachBoundAgent()
+        newAgent.addApprover(approvalApprover)
+        currentBoundAgent = newAgent
+        bindAgent(newAgent)
+    }
+
     private fun observeAgent() {
         viewModelScope.launch {
             agentManager.mainFlow.collect { newAgent ->
-                val prev = currentBoundAgent
-                if (prev !== newAgent) {
-                    prev?.removeApprover(approvalApprover)
-                    newAgent.addApprover(approvalApprover)
-                    currentBoundAgent = newAgent
-                    bindAgent(newAgent)
-                }
+                attachBoundAgent(newAgent)
             }
         }
     }
@@ -305,7 +321,7 @@ class HomeChatViewModel internal constructor(
         }
         val isFirstConversationAssignment = currentState.currentConversationId == null && id != null
         val family = if (!id.isNullOrBlank()) {
-            runCatching { conversations.branchGroup(id) }.getOrDefault(emptyList())
+            tryOrDefault(emptyList()) { conversations.branchGroup(id) }
         } else {
             emptyList()
         }
@@ -325,13 +341,15 @@ class HomeChatViewModel internal constructor(
                 currentConversationTitle = title,
                 turnBranches = turnBranches,
                 conversationVersion = conversationVersion + 1,
+                userToggledKeys = if (id != currentConversationId) emptyMap() else userToggledKeys,
             )
         }
+        Logger.i(LOG_TAG, "applyConversation done id=$id turnsCount=${target.size}")
         if (isFirstConversationAssignment && !currentState.boundConfigId.isNullOrBlank()) {
             val assignedId = id!!
             val boundConfig = currentState.boundConfigId!!
             viewModelScope.launch {
-                runCatching {
+                tryIgnore {
                     conversations.updateConfigId(assignedId, boundConfig)
                 }
             }
@@ -339,17 +357,20 @@ class HomeChatViewModel internal constructor(
         refreshAutoExpandedThinking()
 
         if (last != null && paceBlockIndex >= 0) {
+            val block = last.blocks.getOrNull(paceBlockIndex)
             val fullText = when (paceKind) {
-                "text" -> (last.blocks[paceBlockIndex] as HomeChatBlock.Text).text
-                else -> (last.blocks[paceBlockIndex] as HomeChatBlock.Thinking).text
+                "text" -> (block as? HomeChatBlock.Text)?.text
+                else -> (block as? HomeChatBlock.Thinking)?.text
             }
-            val pacer = if (paceKind == "text") textPacer else thinkingPacer
-            pacer.pace(fullText.length) { _, to ->
-                updateTailBlock(last.id, paceBlockIndex, paceKind == "text") { block ->
-                    when (block) {
-                        is HomeChatBlock.Text -> block.copy(text = fullText.take(to))
-                        is HomeChatBlock.Thinking -> block.copy(text = fullText.take(to))
-                        else -> block
+            if (fullText != null) {
+                val pacer = if (paceKind == "text") textPacer else thinkingPacer
+                pacer.pace(fullText.length) { _, to ->
+                    updateTailBlock(last.id, paceBlockIndex, paceKind == "text") { currentBlock ->
+                        when (currentBlock) {
+                            is HomeChatBlock.Text -> currentBlock.copy(text = fullText.take(to))
+                            is HomeChatBlock.Thinking -> currentBlock.copy(text = fullText.take(to))
+                            else -> currentBlock
+                        }
                     }
                 }
             }
@@ -383,13 +404,6 @@ class HomeChatViewModel internal constructor(
     }
 
     private fun refreshAutoExpandedThinking() {
-        val newActiveKey = currentState.turns.flatMap { turn ->
-            turn.blocks.mapIndexedNotNull { index, block ->
-                if (block is HomeChatBlock.Thinking && seenThinkingKeys.add("${turn.id}_$index") && !block.isComplete) {
-                    "${turn.id}_$index"
-                } else null
-            }
-        }.lastOrNull()
         // TODO: Move the auto-scroll decision from Compose's activeThinkingKey check into ViewModel state.
         val activeKeys = currentState.turns.flatMap { turn ->
             turn.blocks.mapIndexedNotNull { index, block ->
@@ -398,11 +412,6 @@ class HomeChatViewModel internal constructor(
         }
         updateState {
             copy(
-                expandedThinking = if (newActiveKey == null) expandedThinking
-                else (expandedThinking - autoExpandedThinking) + newActiveKey,
-                autoExpandedThinking = if (newActiveKey == null) autoExpandedThinking else setOf(
-                    newActiveKey
-                ),
                 activeThinkingKey = activeKeys.lastOrNull(),
             )
         }
@@ -413,10 +422,12 @@ class HomeChatViewModel internal constructor(
     private fun onInputChanged(value: String) {
         updateState { copy(input = value) }
         agent.updateDraft { it.copy(text = value) }
-        draftSaveJob?.cancel()
-        draftSaveJob = viewModelScope.launch {
-            kotlinx.coroutines.delay(DRAFT_SAVE_DEBOUNCE_MS)
-            conversations.setDraftText(value)
+        draftDebouncer.debounce {
+            runCatchingCancellable {
+                conversations.setDraftText(value)
+            }.onFailure { t ->
+                Logger.w(LOG_TAG, "save draft failed: ${t.message}")
+            }
         }
     }
 
@@ -447,10 +458,9 @@ class HomeChatViewModel internal constructor(
      */
     private suspend fun attachFile(uri: String) {
         val startedAt = System.currentTimeMillis()
-        val result = try {
+        val result = runCatchingCancellable {
             files.attach(uri)
-        } catch (throwable: Throwable) {
-            if (throwable is CancellationException) throw throwable
+        }.getOrElse { throwable ->
             Logger.w(LOG_TAG, "attach file failed uri=$uri reason=${throwable.message}")
             FileAttachResult.Unreadable
         }
@@ -502,7 +512,7 @@ class HomeChatViewModel internal constructor(
         if (settled.images.count { it is DraftImage.Ready } == before) {
             Logger.w(LOG_TAG, "camera ingest failed uri=$uri")
         }
-        runCatching { File(path).delete() }
+        runCatchingCancellable { File(path).delete() }
             .onFailure { Logger.w(LOG_TAG, "camera temp file delete failed path=$path") }
     }
 
@@ -517,7 +527,7 @@ class HomeChatViewModel internal constructor(
         agent.updateDraft { it.copy(text = trimmedInput) }
         // stream() is synchronous; don't let it consume Pending images before AgentImpl finishes ingest.
         agent.draft.first { draft -> draft.images.none { it is DraftImage.Pending } }
-        updateState { copy(isGenerating = true) }
+        updateState { copy(isGenerating = true, unreadTurnId = null) }
         val result = agent.stream()
         Logger.i(LOG_TAG, "send result=$result")
         if (result != TurnStart.Started) {
@@ -526,9 +536,14 @@ class HomeChatViewModel internal constructor(
             }
             return
         }
-        draftSaveJob?.cancel()
-        draftSaveJob = null
-        viewModelScope.launch { conversations.setDraftText("") }
+        draftDebouncer.cancel()
+        viewModelScope.launch {
+            runCatchingCancellable {
+                conversations.setDraftText("")
+            }.onFailure { t ->
+                Logger.w(LOG_TAG, "clear draft failed: ${t.message}")
+            }
+        }
         // 输入框以本类为准：发起即清空，不从 draft 读回
         updateState {
             copy(
@@ -536,7 +551,6 @@ class HomeChatViewModel internal constructor(
                 pendingImages = emptyList(),
                 pendingFiles = emptyList(),
                 activeThinkingKey = null,
-                autoExpandedThinking = emptySet(),
                 // 旧回合的操作行随新回合消失：旧 turn 失去 isLastTurn 后
                 // canToggleUserAction 变 false，不清则操作行永远挂着无法收回
                 expandedActionTurnId = null,
@@ -554,14 +568,13 @@ class HomeChatViewModel internal constructor(
 
     // ── 会话切换 ────────────────────────────────────────────────────────────
 
-    private fun startNewConversation() {
+    private suspend fun startNewConversation() {
         Logger.d(LOG_TAG, "start new conversation")
         val leavingId = agent.conversation.value.id?.value
-        draftSaveJob?.cancel()
-        draftSaveJob = null
+        detachBoundAgent()
+        draftDebouncer.cancel()
         resetPacers()
         conversationBeingLoaded = null
-        seenThinkingKeys.clear()
         val currentInput = currentState.input
         updateState {
             HomeChatUiState(
@@ -569,19 +582,21 @@ class HomeChatViewModel internal constructor(
                 savedConfigs = currentState.savedConfigs,
                 globalActiveConfigId = currentState.globalActiveConfigId,
                 boundConfigId = null,
+                isLoadingConversation = true,
             )
         }
-        viewModelScope.launch {
+        val startedAtMs = System.currentTimeMillis()
+        try {
             refreshSavedConfigs()
-            val startedAtMs = System.currentTimeMillis()
-            try {
+            runCatchingCancellable {
                 if (!leavingId.isNullOrBlank()) {
-                    runCatching { conversations.bindConfig(leavingId) }
+                    runCatchingCancellable { conversations.bindConfig(leavingId) }
                         .onFailure { throwable ->
                             Logger.w(LOG_TAG, "bindConfig failed leavingId=$leavingId", throwable)
                         }
                 }
                 val newAgent = agentManager.startNewConversation()
+                attachBoundAgent(newAgent)
                 if (currentInput.isNotEmpty()) {
                     newAgent.updateDraft { it.copy(text = currentInput) }
                 }
@@ -590,9 +605,11 @@ class HomeChatViewModel internal constructor(
                     LOG_TAG,
                     "new conversation done elapsedMs=${System.currentTimeMillis() - startedAtMs}",
                 )
-            } catch (throwable: Throwable) {
-                if (throwable is CancellationException) throw throwable
+            }.onFailure { throwable ->
+                Logger.e(LOG_TAG, "new conversation failed", throwable)
             }
+        } finally {
+            updateState { copy(isLoadingConversation = false) }
         }
     }
 
@@ -600,13 +617,12 @@ class HomeChatViewModel internal constructor(
         if (startupRestoreAttempted) return
         startupRestoreAttempted = true
         viewModelScope.launch {
-            val draft = runCatching { conversations.draftText() }.getOrDefault("")
+            val draft = tryOrDefault("") { conversations.draftText() }
             if (draft.isNotEmpty()) {
                 updateState { copy(input = draft) }
                 agent.updateDraft { it.copy(text = draft) }
             }
-            val shouldRestore = runCatching { conversations.loadLastConversationOnStartup() }
-                .getOrDefault(true)
+            val shouldRestore = tryOrDefault(true) { conversations.loadLastConversationOnStartup() }
             if (!shouldRestore) {
                 Logger.d(LOG_TAG, "restore skipped loadLastConversationOff")
                 return@launch
@@ -616,7 +632,17 @@ class HomeChatViewModel internal constructor(
                 Logger.d(LOG_TAG, "restore skipped lastOpenedConversationBlank")
                 return@launch
             }
-            loadConversation(conversationId, preferLatestBranch = true)
+            runCatchingCancellable {
+                loadConversation(conversationId, preferLatestBranch = true)
+            }.onFailure { t ->
+                Logger.e(
+                    LOG_TAG,
+                    "restoreStartupState failed for id=$conversationId, falling back to clean state: ${t.message}",
+                    t,
+                )
+                tryIgnore { conversations.setLastOpenedConversationId("") }
+                updateState { HomeChatUiState(input = currentState.input).withClearedTransient() }
+            }
         }
     }
 
@@ -629,11 +655,11 @@ class HomeChatViewModel internal constructor(
      */
     private suspend fun loadConversation(id: String, preferLatestBranch: Boolean = false) {
         val target = if (preferLatestBranch) {
-            runCatching {
+            tryOrDefault(id) {
                 val record = conversations.getConversation(id)
                 val rootId = record?.summary?.rootId
                 if (rootId.isNullOrBlank()) id else conversations.latestBranchId(rootId) ?: id
-            }.getOrDefault(id)
+            }
         } else {
             id
         }
@@ -643,14 +669,16 @@ class HomeChatViewModel internal constructor(
         val startedAtMs = System.currentTimeMillis()
         Logger.i(LOG_TAG, "load conversation id=$target started")
         val leavingId = agent.conversation.value.id?.value
-        if (!leavingId.isNullOrBlank() && leavingId != target) {
-            runCatching { conversations.bindConfig(leavingId) }
-                .onFailure { throwable ->
-                    Logger.w(LOG_TAG, "bindConfig failed leavingId=$leavingId", throwable)
-                }
+        if (leavingId != target) {
+            detachBoundAgent()
+            if (!leavingId.isNullOrBlank()) {
+                runCatchingCancellable { conversations.bindConfig(leavingId) }
+                    .onFailure { throwable ->
+                        Logger.w(LOG_TAG, "bindConfig failed leavingId=$leavingId", throwable)
+                    }
+            }
         }
-        draftSaveJob?.cancel()
-        draftSaveJob = null
+        draftDebouncer.cancel()
         resetPacers()
         conversationBeingLoaded = target
         updateState { copy(isLoadingConversation = true) }
@@ -666,16 +694,21 @@ class HomeChatViewModel internal constructor(
                 return
             }
             val title = record.summary.title.takeIf { it.isNotBlank() }
-            seenThinkingKeys.clear()
             conversationBeingLoaded = target
             val targetAgent = agentManager.switchTo(target)
+            attachBoundAgent(targetAgent)
+            val hadUnread = record.summary.hasUnread
+            val unreadTurnId = if (hadUnread) {
+                targetAgent.conversation.value.turns.indices.lastOrNull()?.toLong()
+            } else {
+                null
+            }
             updateState {
                 copy(
-                    turns = emptyList(),
                     currentConversationId = target,
                     currentConversationTitle = title,
                     boundConfigId = record.configId,
-                    turnBranches = emptyMap(),
+                    unreadTurnId = unreadTurnId,
                 ).withClearedTransient()
             }
             applyConversation(targetAgent.conversation.value, animateTail = false)
@@ -696,6 +729,7 @@ class HomeChatViewModel internal constructor(
 
     private suspend fun clearUnread(id: String) {
         conversations.clearUnread(id)
+        updateState { copy(unreadTurnId = null) }
     }
 
     // ── 历史派生操作 ────────────────────────────────────────────────────────
@@ -712,7 +746,12 @@ class HomeChatViewModel internal constructor(
             LOG_TAG,
             "regenerate fork sourceId=$currentId turnId=$turnId newId=${result.newConversationId}"
         )
+        val preservedKeys = currentState.userToggledKeys.filterKeys { k ->
+            val id = k.substringBefore('_').toLongOrNull() ?: 0L
+            id < turnId
+        }
         loadConversation(result.newConversationId)
+        updateState { copy(userToggledKeys = preservedKeys) }
         agent.updateDraft { draft ->
             draft.copy(
                 text = result.promptText,
@@ -751,7 +790,12 @@ class HomeChatViewModel internal constructor(
             LOG_TAG,
             "fork sourceId=$currentId turnId=$turnId newId=${result.newConversationId}"
         )
+        val preservedKeys = currentState.userToggledKeys.filterKeys { k ->
+            val id = k.substringBefore('_').toLongOrNull() ?: 0L
+            id < turnId
+        }
         loadConversation(result.newConversationId)
+        updateState { copy(userToggledKeys = preservedKeys) }
     }
 
     private suspend fun rewindAt(turnId: Long) {
@@ -763,6 +807,10 @@ class HomeChatViewModel internal constructor(
             LOG_TAG,
             "rewind sourceId=$currentId turnId=$turnId newId=${result.newConversationId}"
         )
+        val preservedKeys = currentState.userToggledKeys.filterKeys { k ->
+            val id = k.substringBefore('_').toLongOrNull() ?: 0L
+            id < turnId
+        }
         loadConversation(result.newConversationId)
         agent.updateDraft { draft ->
             draft.copy(
@@ -778,6 +826,7 @@ class HomeChatViewModel internal constructor(
                 pendingFiles = result.files.map { it.toHomeFile() },
                 expandedActionTurnId = null,
                 expandedActionSource = null,
+                userToggledKeys = preservedKeys,
             )
         }
     }
@@ -786,37 +835,18 @@ class HomeChatViewModel internal constructor(
         val startedAtMs = System.currentTimeMillis()
         Logger.i(LOG_TAG, "delete conversation id=$id started")
         val groupIds = conversations.branchGroupIds(id)
-        groupIds.forEach { branchId ->
-            runCatching { agentManager.destroy(branchId) }
-        }
         val currentOpenId = agent.conversation.value.id?.value
         val deletingCurrent = id == currentOpenId || groupIds.contains(currentOpenId)
+        if (deletingCurrent) {
+            startNewConversation()
+        }
+        groupIds.forEach { branchId ->
+            tryIgnore { agentManager.destroy(branchId) }
+        }
         conversations.deleteConversation(id)
         if (!deletingCurrent) {
             Logger.d(LOG_TAG, "delete conversation id=$id notCurrent skipped")
             return
-        }
-        draftSaveJob?.cancel()
-        draftSaveJob = null
-        resetPacers()
-        val currentInput = currentState.input
-        val newAgent = agentManager.startNewConversation()
-        if (currentInput.isNotEmpty()) {
-            newAgent.updateDraft { it.copy(text = currentInput) }
-        }
-        conversationBeingLoaded = null
-        seenThinkingKeys.clear()
-        conversations.setLastOpenedConversationId("")
-        updateState {
-            HomeChatUiState(
-                input = currentInput,
-                savedConfigs = currentState.savedConfigs,
-                globalActiveConfigId = currentState.globalActiveConfigId,
-                boundConfigId = null,
-            )
-        }
-        viewModelScope.launch {
-            refreshSavedConfigs()
         }
         Logger.i(
             LOG_TAG,
@@ -826,53 +856,21 @@ class HomeChatViewModel internal constructor(
 
     // ── 展开态 ──────────────────────────────────────────────────────────────
 
-    private fun toggleToolRun(turnId: Long, runStartIndex: Int) {
-        val key = "${turnId}_${runStartIndex}"
+    private fun toggleActionKey(key: String, isExpanded: Boolean) {
         updateState {
-            copy(
-                expandedToolRuns = if (key in expandedToolRuns) {
-                    expandedToolRuns - key
-                } else {
-                    expandedToolRuns + key
-                },
-            )
-        }
-    }
-
-    private fun toggleToolResult(turnId: Long, runStartIndex: Int, toolIndex: Int) {
-        val key = "${turnId}_${runStartIndex}_${toolIndex}"
-        updateState {
-            copy(
-                expandedToolResults = if (key in expandedToolResults) {
-                    expandedToolResults - key
-                } else {
-                    expandedToolResults + key
-                },
-            )
-        }
-    }
-
-    private fun toggleThinking(turnId: Long, blockIndex: Int) {
-        val key = "${turnId}_$blockIndex"
-        updateState {
-            copy(
-                expandedThinking = if (key in expandedThinking) {
-                    expandedThinking - key
-                } else {
-                    expandedThinking + key
-                },
-                // 用户干预：移出自动展开跟踪，后续新块不再自动收起它
-                autoExpandedThinking = autoExpandedThinking - key,
-            )
+            copy(userToggledKeys = userToggledKeys + (key to isExpanded))
         }
     }
 
     private fun toggleActionRow(turnId: Long, source: ActionSource) {
         updateState {
-            if (expandedActionTurnId == turnId && expandedActionSource == source) {
-                return@updateState this
+            val currentTurnId = expandedActionTurnId
+            val currentSource = expandedActionSource
+            if (currentTurnId == turnId && currentSource == source) {
+                copy(expandedActionTurnId = null, expandedActionSource = null)
+            } else {
+                copy(expandedActionTurnId = turnId, expandedActionSource = source)
             }
-            copy(expandedActionTurnId = turnId, expandedActionSource = source)
         }
     }
 
@@ -886,12 +884,10 @@ class HomeChatViewModel internal constructor(
     }
 
     override fun onCleared() {
-        draftSaveJob?.cancel()
-        draftSaveJob = null
+        draftDebouncer.cancel()
         // 在途请求交给其他来源（或按拒绝结算）；本类不再持有来源身份
         approvalApprover.detach()
-        currentBoundAgent?.removeApprover(approvalApprover)
-        agentObserveJob?.cancel()
+        detachBoundAgent()
         super.onCleared()
     }
 

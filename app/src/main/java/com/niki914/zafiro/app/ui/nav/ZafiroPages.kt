@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.niki914.uikit.infra.nav.Page
 import com.niki914.zafiro.app.R
+import com.niki914.zafiro.app.ui.viewer.ViewerContent
 import com.niki914.zafiro.repo.BuiltinToolGroups
 
 sealed interface PageTitleSpec
@@ -225,8 +226,33 @@ data class TakeoverRuleDetailPage(
         if (isCreating) null else TopBarActionSpec(icon = Icons.Default.Delete, contentDescription = "Delete Button")
 }
 
+data class MaskingRuleDetailPage(
+    val ruleId: String?,
+    val ruleName: String,
+    val ruleIndex: Int,
+    val isCreating: Boolean = false,
+) : ZafiroPage {
+    override val routeKey: String = "masking-rule-detail:${ruleId ?: "new"}:$ruleIndex:$ruleName"
+    override val titleSpec: PageTitleSpec = TextTitle(ruleName)
+    override val leftAction: TopBarActionSpec =
+        TopBarActionSpec(icon = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back Button")
+    override val rightAction: TopBarActionSpec? =
+        if (isCreating) null else TopBarActionSpec(icon = Icons.Default.Delete, contentDescription = "Delete Button")
+}
+
 data object PromptEditPage : ZafiroPage {
     override val routeKey: String = "prompt-edit"
+    override val titleSpec: PageTitleSpec = ResTitle(R.string.ui_settings_configure_prompt_label)
+    override val leftAction: TopBarActionSpec =
+        TopBarActionSpec(icon = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back Button")
+    override val rightAction: TopBarActionSpec? = null
+}
+
+data class SavedConfigPromptEditPage(
+    val configId: String?,
+    val providerId: String? = null,
+) : ZafiroPage {
+    override val routeKey: String = "saved-config-prompt-edit:${configId ?: providerId ?: "new"}"
     override val titleSpec: PageTitleSpec = ResTitle(R.string.ui_settings_configure_prompt_label)
     override val leftAction: TopBarActionSpec =
         TopBarActionSpec(icon = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back Button")
@@ -287,3 +313,23 @@ data object MarkdownScalePage : ZafiroPage {
         TopBarActionSpec(icon = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back Button")
     override val rightAction: TopBarActionSpec? = null
 }
+
+data object FloatingBallSettingsPage : ZafiroPage {
+    override val routeKey: String = "floating-ball-settings"
+    override val titleSpec: PageTitleSpec = ResTitle(R.string.ui_settings_general_floating_ball)
+    override val leftAction: TopBarActionSpec =
+        TopBarActionSpec(icon = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back Button")
+    override val rightAction: TopBarActionSpec? = null
+    override val titleMode: TitleBarMode = TitleBarMode.Collapsible
+}
+
+data class ViewerPage(
+    val content: ViewerContent,
+) : ZafiroPage {
+    override val routeKey: String = "viewer:${content.routeKey}"
+    override val titleSpec: PageTitleSpec = NoTitle
+    override val leftAction: TopBarActionSpec =
+        TopBarActionSpec(icon = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back Button")
+    override val rightAction: TopBarActionSpec? = null
+}
+

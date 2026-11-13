@@ -43,9 +43,13 @@
     <string name="ui_tool_status_running">Ejecutando</string>
     <string name="ui_tool_status_success">Completado</string>
     <string name="ui_tool_status_failed">Error</string>
-    <plurals name="ui_tool_chain_count">
-        <item quantity="one">%d herramienta</item>
-        <item quantity="other">%d herramientas</item>
+    <plurals name="ui_steps_wrapped_count">
+        <item quantity="one">%d paso replegado</item>
+        <item quantity="other">%d pasos replegados</item>
+    </plurals>
+    <plurals name="ui_steps_collapse_count">
+        <item quantity="one">contraer %d paso</item>
+        <item quantity="other">contraer %d pasos</item>
     </plurals>
     <string name="ui_home_attach_sheet_title">Añadir a la conversación</string>
     <string name="ui_home_attach_photos">Fotos</string>
@@ -64,6 +68,11 @@
     <string name="ui_home_file_category_archive">Archivo comprimido</string>
     <string name="ui_home_file_category_apk">APK</string>
     <string name="ui_home_file_category_file">Archivo</string>
+    <string name="ui_action_view">Ver</string>
+    <string name="ui_viewer_copy_all">Copiar todo</string>
+    <string name="ui_image_unavailable">No disponible</string>
+    <string name="ui_viewer_image_unavailable">No se puede cargar la imagen</string>
+    <string name="ui_viewer_image_unavailable_desc">El archivo de imagen no existe o se ha borrado la caché</string>
     <string name="ui_toast_copied">Copiado al portapapeles</string>
     <string name="ui_toast_generating">Generando, espere un momento</string>
     <string name="ui_toast_empty_input">Por favor ingrese un mensaje</string>
@@ -79,7 +88,7 @@
     <string name="ui_home_error_retry_exhausted_title">Reintentos automáticos agotados</string>
     <string name="ui_home_error_internal_title">Error interno</string>
     <string name="ui_home_retrying_title">Problema de red, reintentando…</string>
-    <string name="ui_home_thinking_title">Pensando</string>
+    <string name="ui_home_thinking_title">Pensar</string>
     <string name="ui_home_retrying_attempt">Reintento %1$d/%2$d</string>
     <string name="runtime_error_internal">Error interno</string>
     <string name="ui_conversation_history_title">Historial</string>
@@ -110,6 +119,8 @@
     <string name="ui_conversation_rename_dialog_hint">Título de la conversación</string>
     <string name="ui_conversation_rename_dialog_confirm">Guardar</string>
     <string name="ui_conversation_rename_dialog_cancel">Cancelar</string>
+    <string name="ui_conversation_search_placeholder">Buscar en historial y mensajes</string>
+    <string name="ui_conversation_search_empty">No se encontraron conversaciones coincidentes</string>
     <string name="ui_time_just_now">Ahora mismo</string>
     <string name="ui_time_minutes_ago">Hace %1$d m</string>
     <string name="ui_time_hours_ago">Hace %1$d h</string>
@@ -168,6 +179,12 @@
     <string name="ui_settings_about_telegram">Grupo de Telegram</string>
     <string name="ui_settings_about_feedback_feature">Sugerir función</string>
     <string name="ui_settings_about_feedback_bug">Notificar error</string>
+    <string name="ui_settings_about_telemetry_title">Diagnóstico y uso</string>
+    <string name="ui_settings_about_telemetry_summary">Envía datos de diagnóstico anónimos para mejorar la estabilidad</string>
+    <string name="ui_settings_about_telemetry_dialog_title">Diagnóstico y uso</string>
+    <string name="ui_settings_about_telemetry_dialog_text">Envía datos anónimos de diagnóstico y rendimiento para solucionar problemas y mejorar la estabilidad.\n\nNunca recopila datos personales, conversaciones ni credenciales sensibles.</string>
+    <string name="ui_settings_about_telemetry_dialog_positive">Ver documentación</string>
+    <string name="ui_settings_about_telemetry_dialog_negative">Listo</string>
     <string name="ui_settings_about_version">Versión</string>
 
     <string name="ui_settings_storage_description">Consulta el espacio que ocupa cada caché y tócalo para borrarlo. Nunca se tocan los ajustes, los recuerdos ni las conversaciones.</string>
@@ -192,6 +209,7 @@
     <string name="ui_todo_page_description">Estará disponible en próximas versiones.</string>
     <string name="unsaved_changes_dialog_title">Cambios sin guardar</string>
     <string name="unsaved_changes_dialog_text">¿Está seguro de que desea salir?</string>
+    <string name="unsaved_changes_dialog_fields_prefix">Los siguientes cambios no se han guardado:</string>
     <string name="unsaved_changes_dialog_confirm_exit">Aceptar</string>
     <string name="unsaved_changes_dialog_cancel">Cancelar</string>
 
@@ -199,7 +217,10 @@
     <string name="ui_settings_configure_description">Ajustar la configuración del modelo, prompt del sistema y proxy.</string>
     <string name="ui_settings_configure_save">Guardar configuración</string>
     <string name="ui_settings_configure_prompt_label">Prompt del sistema</string>
+    <string name="ui_settings_configure_prompt_state_global">Global por defecto</string>
+    <string name="ui_settings_configure_prompt_state_custom">Personalizado</string>
     <string name="prompt_editor_description">Edita el System Prompt. Los cambios se aplicarán en la siguiente conversación tras guardar.</string>
+    <string name="config_prompt_editor_description">Configura un System Prompt dedicado para este modelo. Déjalo en blanco para usar el prompt global. Se aplicará al cambiar a esta configuración.</string>
     <string name="prompt_error_load_failed">No se pudo cargar el prompt. Vuelve atrás e inténtalo de nuevo.</string>
     <string name="ui_settings_configure_proxy_label">Proxy</string>
     <string name="ui_settings_configure_proxy_placeholder">Ejemplo: http://127.0.0.1:7890</string>
@@ -400,11 +421,10 @@
 
     <!-- XService notifications -->
 
-    <string name="feedback_bug_template">## Descripción del problema\n\n## Pasos para reproducir\n\n## Comportamiento esperado\n\n## Comportamiento real\n\n## Información del dispositivo\n- Versión de Android:\n- Asistente (Breeno u otro):\n- Versión del módulo:\n\n## Información adicional\nPuede adjuntar registros, capturas o grabaciones de pantalla para ayudarnos a entender el problema.</string>
+    <string name="feedback_bug_template">## Descripción del problema\n\n## Pasos para reproducir\n\n## Comportamiento esperado\n\n## Comportamiento real\n\n## Información del dispositivo\n- Versión de Android:\n- Asistente:\n- Versión del módulo:\n\n## Información adicional\nPuede adjuntar registros, capturas o grabaciones de pantalla para ayudarnos a entender el problema.</string>
     <string name="conversation_fork_title">Fork · %1$s</string>
     <string name="conversation_rewind_title">Rewind · %1$s</string>
     <!-- Tool display names -->
-    <string name="ui_tool_display_terminal">Terminal</string>
     <string name="ui_tool_display_shell">Shell</string>
     <string name="ui_tool_display_ssh">SSH</string>
     <string name="ui_tool_display_load_skill">Cargar Skill</string>
@@ -420,6 +440,7 @@
     <string name="ui_tool_display_screen_operation_shell">Operaciones de pantalla</string>
     <string name="ui_tool_display_screenshot">Captura de pantalla</string>
     <string name="ui_tool_display_view_image">Ver imagen</string>
+    <string name="ui_tool_display_py_meta_tools">Herramienta personalizada de Python</string>
     <string name="dialog_cancel">Cancelar</string>
     <string name="dialog_confirm_delete">Eliminar</string>
     <string name="ui_settings_section_general">General</string>
@@ -432,6 +453,12 @@
     <string name="ui_settings_general_floating_ball_summary">Mostrar estado del agente y acciones rápidas en segundo plano</string>
     <string name="ui_settings_general_floating_ball_auto_expand">Expandir la bola automáticamente</string>
     <string name="ui_settings_general_floating_ball_auto_expand_summary">Expandir la bola flotante al terminar una respuesta o al requerir aprobación</string>
+    <string name="ui_settings_floating_ball_enable">Habilitar bola flotante</string>
+    <string name="ui_settings_floating_ball_auto_expand">Expandir automáticamente</string>
+    <string name="ui_settings_floating_ball_opacity">Opacidad al acoplar</string>
+    <string name="ui_settings_floating_ball_opacity_summary">Transparencia de la bola flotante cuando está acoplada al borde</string>
+    <string name="ui_settings_floating_ball_submerged_offset">Profundidad de acople</string>
+    <string name="ui_settings_floating_ball_submerged_offset_summary">Distancia retraída en el borde de la pantalla al acoplar</string>
     <string name="ui_settings_general_resident_notification">Notificación residente</string>
     <string name="ui_settings_general_resident_notification_summary">Mostrar estado en vivo y accesos directos en el panel de notificaciones</string>
     <string name="ui_settings_general_turn_notification">Notificaciones de eventos de turnos</string>
@@ -457,7 +484,7 @@
     <string name="ui_settings_runtime_compaction_threshold_summary">Compactar automáticamente el historial cuando el uso de la ventana de contexto alcance el umbral</string>
     <string name="ui_settings_runtime_compaction_off">Desactivado</string>
     <string name="ui_settings_runtime_repetition_detection">Detección de repeticiones</string>
-    <string name="ui_settings_runtime_repetition_summary">Interrumpe el turno cuando el modelo se repite; los niveles más estrictos reaccionan antes, pero también pueden cortar contenido que no es un bucle</string>
+    <string name="ui_settings_runtime_repetition_summary">Interrumpe el turno cuando el modelo se repite. Los niveles más estrictos reaccionan antes, pero pueden cortar contenido válido.</string>
     <string name="ui_settings_runtime_sensitivity_relaxed">Relajada</string>
     <string name="ui_settings_runtime_sensitivity_loose">Amplia</string>
     <string name="ui_settings_runtime_sensitivity_standard">Estándar</string>
@@ -466,6 +493,8 @@
     <string name="ui_settings_runtime_sensitivity_strictest">Muy estricta</string>
     <string name="ui_settings_runtime_sensitivity_off">Desactivada</string>
     <string name="ui_settings_general_always_show_message_actions">Mostrar siempre las acciones de los mensajes</string>
+    <string name="ui_settings_general_always_show_detailed_tool_output">Mostrar siempre la salida detallada de las herramientas</string>
+    <string name="ui_settings_general_always_show_detailed_tool_output_summary">Salidas muy extensas pueden causar ralentizaciones en la interfaz</string>
     <string name="ui_settings_general_voice_assistant_isolated_session">Sesión dedicada del asistente de voz</string>
     <string name="ui_settings_general_voice_assistant_isolated_session_summary">Mantener aisladas las conversaciones del asistente de voz del historial principal</string>
     <string name="ui_settings_saved_configuration_title">Configuraciones guardadas</string>
@@ -484,20 +513,25 @@
     <string name="ui_settings_configure_endpoint_mismatch_cancel_save">Guardar tal cual</string>
     <string name="ui_settings_configure_protocol_hint">Tras cambiar el protocolo, asegúrese de que el endpoint sea compatible con dicho protocolo.</string>
     <string name="ui_settings_configure_thinking_label">Esfuerzo de razonamiento</string>
-    <string name="ui_settings_configure_thinking_hint">Deje en Provider Default para usar el comportamiento predeterminado del proveedor; redúzcalo si el proveedor rechaza un nivel alto.</string>
+    <string name="ui_settings_configure_thinking_hint">Sigue la configuración predeterminada del modelo. Reduzca la intensidad si el proveedor rechaza la solicitud.</string>
     <string name="ui_settings_configure_thinking_start_label">Default</string>
     <string name="ui_settings_configure_thinking_end_label">Max</string>
     <string name="ui_settings_configure_max_tokens_label">Max Tokens</string>
     <string name="ui_settings_configure_max_tokens_placeholder">Por ejemplo: 200000 o 200k</string>
-    <string name="ui_settings_configure_error_max_tokens_invalid">Introduzca un número válido (sufijos k/m/b admitidos) de al menos 256</string>
+    <string name="ui_settings_configure_error_max_tokens_invalid">Introduzca un número válido de al menos 256, admite k/m/b</string>
     <string name="ui_settings_configure_context_window_label">Ventana de contexto</string>
     <string name="ui_settings_configure_context_window_placeholder">Por ejemplo: 1000000 o 1M</string>
-    <string name="ui_settings_configure_error_context_window_invalid">Introduzca un número válido (sufijos k/m/b admitidos) de al menos 1000</string>
+    <string name="ui_settings_configure_error_context_window_invalid">Introduzca un número válido de al menos 1000, admite k/m/b</string>
+
+    <string name="ui_settings_theme_style_title">Estilo</string>
+    <string name="ui_theme_style_liquid">Glass</string>
+    <string name="ui_theme_style_md3">MD3</string>
+    <string name="ui_theme_style_md3e">MD3E</string>
 
     <string name="ui_theme_mode_system">Según el sistema</string>
     <string name="ui_theme_mode_light">Claro</string>
     <string name="ui_theme_mode_dark">Oscuro</string>
-    <string name="ui_theme_color_dynamic">Dinámico (del fondo)</string>
+    <string name="ui_theme_color_dynamic">Color de fondo dinámico</string>
     <string name="ui_theme_color_rose">Rosa</string>
     <string name="ui_theme_color_blossom">Flor</string>
     <string name="ui_theme_color_lavender">Lavanda</string>
@@ -651,6 +685,8 @@
     <string name="gateway_pair_waiting_summary">Approve this code on the Gateway host (admin.js)</string>
     <string name="gateway_section_tools">Tools available remotely</string>
     <string name="gateway_tools_warning">Independent from the MCP Service page. Enabling shell / ssh / Python lets any client with access to your Gateway run code on this phone — be careful.</string>
+    <string name="gateway_section_mcp_forward">Forwarded MCP servers</string>
+    <string name="gateway_mcp_forward_warning">Lists the servers you configured under MCP. When on, any client connected to the Gateway can call every tool of that server, so only enable servers you trust. Reconnect to the Gateway after changing this to refresh the tool list.</string>
     <string name="gateway_section_operation">During operation</string>
     <string name="gateway_lock_touch_title">Lock touch during operation (root)</string>
     <string name="gateway_lock_touch_summary">After a client calls phone_operation_start and while the AI is operating the physical screen, physical touch is disabled to prevent accidental input. It never locks when everything runs on the background virtual display. Press Volume Down or Power to stop and cancel the current action.</string>
@@ -694,4 +730,33 @@
     <string name="task_monitor_stop_watching">Dejar de observar</string>
     <string name="task_monitor_stop_task">Detener tarea</string>
     <string name="task_monitor_stop_remote_hint">Cancela la acción en curso y rechaza una vez la siguiente solicitud del agente.</string>
+    <string name="ui_settings_masking_rules">Enmascaramiento de datos</string>
+    <string name="ui_settings_masking_rules_summary">Enmascarar datos sensibles antes de solicitudes salientes</string>
+    <string name="masking_rules_page_description">Configure reglas de enmascaramiento para datos sensibles. Las coincidencias en solicitudes salientes se sustituirán por marcadores de posición mientras los chats locales y herramientas conservan los datos originales.</string>
+    <string name="masking_rules_empty_action_hint">Toque en la esquina superior derecha para añadir su primera regla de enmascaramiento.</string>
+    <string name="masking_rules_loading">Cargando reglas de enmascaramiento...</string>
+    <string name="masking_rules_editor_title_create">Nueva regla de enmascaramiento</string>
+    <string name="masking_rules_editor_description">Los datos sensibles solo se reemplazan por marcadores de posición antes de enviar solicitudes salientes. La visualización local y la ejecución de herramientas no se ven afectadas.</string>
+    <string name="masking_rules_field_name">Nombre de la regla</string>
+    <string name="masking_rules_field_name_hint">Ejemplo: Clave de API</string>
+    <string name="masking_rules_field_enabled">Habilitar regla</string>
+    <string name="masking_rules_field_kind">Tipo de etiqueta</string>
+    <string name="masking_rules_field_kind_hint">API_KEY</string>
+    <string name="masking_rules_field_kind_description">Prefijo del marcador de posición. Por ejemplo, API_KEY se reemplazará por marcadores numerados.</string>
+    <string name="masking_rules_field_patterns">Reglas</string>
+    <string name="masking_rules_field_patterns_hint">Ejemplo: \bsk-[a-zA-Z0-9_\-]{20,}\b</string>
+    <string name="masking_rules_field_patterns_description">Introduzca una palabra clave o expresión regular por línea. El enmascaramiento se activa cuando coincide cualquiera de ellas.</string>
+    <string name="masking_rules_save_action">Guardar regla</string>
+    <string name="masking_rules_error_name_required">Introduzca un nombre para la regla</string>
+    <string name="masking_rules_error_kind_required">Introduzca un tipo de etiqueta</string>
+    <string name="masking_rules_error_kind_invalid">Tipo de etiqueta no válido</string>
+    <string name="masking_rules_error_patterns_required">Introduzca al menos una regla</string>
+    <string name="masking_rules_error_load_failed_generic">Error al cargar las reglas de enmascaramiento</string>
+    <string name="masking_rules_error_load_failed">Error al cargar las reglas de enmascaramiento: %1$s</string>
+    <string name="masking_rules_error_save_failed_generic">Error al guardar la regla de enmascaramiento</string>
+    <string name="masking_rules_error_save_failed">Error al guardar la regla de enmascaramiento: %1$s</string>
+    <string name="masking_rules_error_delete_failed_generic">Error al eliminar la regla de enmascaramiento</string>
+    <string name="masking_rules_error_delete_failed">Error al eliminar la regla de enmascaramiento: %1$s</string>
+    <string name="masking_rules_delete_dialog_title">Eliminar regla de enmascaramiento</string>
+    <string name="masking_rules_delete_dialog_text">¿Está seguro de que desea eliminar la regla de enmascaramiento «%1$s»? Esta acción no se puede deshacer.</string>
 </resources>

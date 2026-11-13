@@ -46,6 +46,7 @@ class SettingsViewModelTest {
             listOf(
                 ZafiroSettingsGroup.Takeover,
                 ZafiroSettingsGroup.ExecutionRules,
+                ZafiroSettingsGroup.MaskingRules,
             ),
             state.sections[3].groups,
         )

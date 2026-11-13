@@ -152,6 +152,31 @@ data class RuntimeTakeoverRule(
     val patterns: List<String>,
 )
 
+data class RuntimeMaskingRule(
+    val id: String,
+    val name: String,
+    val enabled: Boolean = true,
+    val kind: String = "API_KEY",
+    val patterns: List<String>,
+) {
+    companion object {
+        const val FALLBACK_KIND = "UNDEFINED"
+
+        fun isValidKind(kind: String): Boolean {
+            val trimmed = kind.trim()
+            if (trimmed.isEmpty()) return false
+            if (trimmed.contains("{{") || trimmed.contains("}}")) return false
+            if (trimmed.contains('\n') || trimmed.contains('\r')) return false
+            return true
+        }
+
+        fun sanitizeKind(kind: String): String {
+            val trimmed = kind.trim()
+            return if (isValidKind(trimmed)) trimmed else FALLBACK_KIND
+        }
+    }
+}
+
 data class RuntimeTakeoverSettings(
     val defaultTarget: RuntimeTakeoverTarget = RuntimeTakeoverTarget.ZAFIRO,
     val rules: List<RuntimeTakeoverRule> = emptyList(),
@@ -239,6 +264,8 @@ data class RuntimeGatewayConfig(
     val deviceName: String = "",
     val autoConnect: Boolean = true,
     val exposedTools: Set<String> = DEFAULT_EXPOSED_TOOLS,
+    /** 经 Gateway 转发给远端客户端的已配置 MCP 服务器名；默认空，需用户在设置页逐个开启。 */
+    val forwardedMcpServers: Set<String> = emptySet(),
     /** 操作会话期间用 root 关闭实体触控（AI 的注入式点击不受影响）；需要 root，默认关闭。 */
     val lockTouchDuringOperation: Boolean = false,
 ) {

@@ -11,12 +11,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.niki914.uikit.infra.ConfirmationLiquidDialog
-import com.niki914.uikit.infra.ProvideLiquidScreenContentForPreview
+import com.niki914.uikit.dialog.ZafiroConfirmationDialog
+import com.niki914.uikit.dialog.ZafiroSingleChoiceDialog
 import com.niki914.uikit.infra.component.SettingsGroupCard
 import com.niki914.uikit.infra.component.SettingsItemDivider
 import com.niki914.uikit.infra.component.SettingsListItem
 import com.niki914.uikit.infra.nav.pageViewModel
+import com.niki914.uikit.screen.ProvideZafiroScreenContentForPreview
 import com.niki914.zafiro.app.R
 import com.niki914.zafiro.app.ui.model.ExecutionRuleDeleteConfirmationState
 import com.niki914.zafiro.app.ui.model.ExecutionRuleFormState
@@ -26,7 +27,11 @@ import com.niki914.zafiro.app.ui.model.ExecutionRulesSettingsIntent
 import com.niki914.zafiro.app.ui.model.ExecutionRulesSettingsUiState
 import com.niki914.zafiro.app.ui.model.ExecutionRulesSettingsViewModel
 import com.niki914.zafiro.app.ui.model.hasUnsavedChanges
+import com.niki914.zafiro.app.ui.model.unsavedFieldLabelRes
 import com.niki914.zafiro.app.ui.nav.ExecutionRuleDetailPage
+import com.niki914.zafiro.app.ui.settings.form.EditableSettingsDetailChrome
+import com.niki914.zafiro.app.ui.settings.form.EditableSettingsDetailFormScaffold
+import com.niki914.zafiro.app.ui.settings.form.SettingControlledExpandableTextItem
 import com.niki914.zafiro.settings.model.RuntimeExecutionRuleEnabledMode
 
 @Composable
@@ -44,6 +49,9 @@ fun ExecutionRuleDetailContent(
         isCreating = page.isCreating,
         hasUnsavedChanges = {
             uiState.formState.hasUnsavedChanges
+        },
+        unsavedFieldLabelRes = {
+            uiState.formState.unsavedFieldLabelRes()
         },
         onDiscardChanges = onBack,
         onDelete = {
@@ -188,7 +196,7 @@ private fun ExecutionRuleDetailContentBody(
     val modeOptions = RuntimeExecutionRuleEnabledMode.entries.map { mode ->
         ExecutionRuleModeOption(mode, stringResource(mode.labelRes()))
     }
-    SingleChoiceLiquidDialog(
+    ZafiroSingleChoiceDialog(
         visible = showEnabledModeDialog,
         onDismissRequest = { showEnabledModeDialog = false },
         title = stringResource(R.string.execution_rules_field_enabled_mode),
@@ -258,7 +266,7 @@ private fun RuntimeExecutionRuleEnabledMode.labelRes(): Int {
 @Composable
 private fun ExecutionRuleDetailContentPreview() {
     MaterialTheme {
-        ProvideLiquidScreenContentForPreview(topPadding = 0.dp) {
+        ProvideZafiroScreenContentForPreview(topPadding = 0.dp) {
             ExecutionRuleDetailContentBody(
                 uiState = ExecutionRulesSettingsUiState(
                     formState = ExecutionRuleFormState(
@@ -290,7 +298,7 @@ private fun ExecutionRuleDeleteConfirmationDialog(
     onDismissRequest: () -> Unit,
     onConfirmClick: () -> Unit,
 ) {
-    ConfirmationLiquidDialog(
+    ZafiroConfirmationDialog(
         visible = state != null,
         onDismissRequest = onDismissRequest,
         title = stringResource(R.string.execution_rules_delete_dialog_title),

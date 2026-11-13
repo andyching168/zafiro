@@ -234,7 +234,7 @@ class GatewayDeviceAgent(
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 lastRxAt.set(System.currentTimeMillis())
                 sessionScope.launch {
-                    val tools = bridge.listTools(effectiveToolConfig(config))
+                    val tools = bridge.listTools(effectiveToolConfig(config), config.forwardedMcpServers)
                     webSocket.send(
                         GatewayProtocol.hello(
                             deviceId = config.deviceId,
@@ -365,7 +365,7 @@ class GatewayDeviceAgent(
             when (req.method) {
                 "tools/list" -> GatewayProtocol.result(
                     id,
-                    JsonObject(mapOf("tools" to bridge.listTools(toolConfig))),
+                    JsonObject(mapOf("tools" to bridge.listTools(toolConfig, config.forwardedMcpServers))),
                 )
 
                 "tools/call" -> {
@@ -382,7 +382,7 @@ class GatewayDeviceAgent(
                         return GatewayProtocol.error(id, "INVALID_ARGUMENT", "arguments too large")
                     }
                     val timeoutMs = callTimeout(args)
-                    val result = withTimeout(timeoutMs) { bridge.call(toolConfig, name, args) }
+                    val result = withTimeout(timeoutMs) { bridge.call(toolConfig, name, args, config.forwardedMcpServers) }
                     GatewayProtocol.result(id, result)
                 }
 

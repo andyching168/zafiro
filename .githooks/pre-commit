@@ -1,5 +1,5 @@
 #!/bin/sh
-# 提交前坏味道检查。规则与放行方式见同目录 README.md。
+# 提交前坏味道与规范检查。规则、分类与放行方式见同目录 README.md。
 root=$(git rev-parse --show-toplevel) || exit 0
 
 if ! command -v python3 >/dev/null 2>&1; then
@@ -7,4 +7,4 @@ if ! command -v python3 >/dev/null 2>&1; then
 	exit 0
 fi
 
-exec python3 "$root/.githooks/check.py" --staged
+python3 "$root/.githooks/cli.py" --staged

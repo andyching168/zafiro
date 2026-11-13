@@ -10,6 +10,7 @@ import com.niki914.zafiro.settings.model.RuntimeCustomPyTool
 import com.niki914.zafiro.settings.model.RuntimeExecutionRule
 import com.niki914.zafiro.settings.model.RuntimeLlmConfig
 import com.niki914.zafiro.settings.model.RuntimeLoadedSkill
+import com.niki914.zafiro.settings.model.RuntimeMaskingRule
 import com.niki914.zafiro.settings.model.RuntimeMcpServer
 import com.niki914.zafiro.settings.model.RuntimeSkillMetadata
 import com.niki914.zafiro.settings.model.RuntimeToolValidation
@@ -79,7 +80,9 @@ class XRepoRuntimeGateway(
             supportsImages = active?.supportsImages ?: false,
             proxy = active?.proxy.orEmpty(),
             thinkingLevel = active?.thinkingLevel.orEmpty(),
-            prompt = doc.prompt,
+            prompt = active?.prompt?.trim()?.takeIf(String::isNotBlank)
+                ?: doc.prompt.trim().takeIf(String::isNotBlank)
+                ?: "",
             memories = memories,
             idleTimeoutSeconds = repo.llmIdleTimeoutSeconds().takeIf { it > 0L },
             retryMaxAttempts = repo.llmRetryMaxAttempts(),
@@ -165,5 +168,9 @@ class XRepoRuntimeGateway(
 
     override suspend fun listExecutionRules(): List<RuntimeExecutionRule> {
         return repo.executionRules.list()
+    }
+
+    override suspend fun listMaskingRules(): List<RuntimeMaskingRule> {
+        return repo.maskingRules.list()
     }
 }

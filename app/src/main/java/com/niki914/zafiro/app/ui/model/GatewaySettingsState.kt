@@ -28,7 +28,12 @@ data class GatewaySettingsUiState(
     val exposedTools: Set<String> = emptySet(),
     val lockTouch: Boolean = false,
     val tools: List<McpServiceToolItemUi> = emptyList(),
+    /** 用户在 MCP 设置里配置的服务器，可逐个选择是否经 Gateway 转发。 */
+    val mcpServers: List<GatewayMcpServerUi> = emptyList(),
+    val forwardedMcpServers: Set<String> = emptySet(),
 )
+
+data class GatewayMcpServerUi(val name: String, val url: String, val enabled: Boolean)
 
 sealed interface GatewayPairingUi {
     data object Idle : GatewayPairingUi
@@ -51,6 +56,7 @@ sealed interface GatewaySettingsIntent {
     data object Pair : GatewaySettingsIntent
     data class ToggleLockTouch(val enabled: Boolean) : GatewaySettingsIntent
     data class ToggleTool(val toolName: String, val checked: Boolean) : GatewaySettingsIntent
+    data class ToggleMcpServer(val serverName: String, val checked: Boolean) : GatewaySettingsIntent
 }
 
 sealed interface GatewaySettingsEffect
@@ -76,6 +82,7 @@ class GatewaySettingsViewModel :
                         autoConnect = config.autoConnect,
                         secretConfigured = config.deviceSecret.isNotBlank(),
                         exposedTools = config.exposedTools,
+                        forwardedMcpServers = config.forwardedMcpServers,
                         lockTouch = config.lockTouchDuringOperation,
                     )
                 }
@@ -90,6 +97,7 @@ class GatewaySettingsViewModel :
             GatewaySettingsIntent.Load -> {
                 val config = XRepo.gateway.get()
                 val allTools = McpToolCatalog.list()
+                val mcpServers = XRepo.mcp.list().map { GatewayMcpServerUi(it.name, it.url, it.enabled) }
                 updateState {
                     copy(
                         enabled = config.enabled,
@@ -99,8 +107,10 @@ class GatewaySettingsViewModel :
                         nameInput = config.deviceName,
                         secretConfigured = config.deviceSecret.isNotBlank(),
                         exposedTools = config.exposedTools,
+                        forwardedMcpServers = config.forwardedMcpServers,
                         lockTouch = config.lockTouchDuringOperation,
                         tools = allTools,
+                        mcpServers = mcpServers,
                     )
                 }
             }
@@ -140,6 +150,13 @@ class GatewaySettingsViewModel :
             GatewaySettingsIntent.Pair -> pair()
             is GatewaySettingsIntent.ToggleLockTouch ->
                 XRepo.gateway.update { it.copy(lockTouchDuringOperation = intent.enabled) }
+            is GatewaySettingsIntent.ToggleMcpServer -> XRepo.gateway.update {
+                it.copy(
+                    forwardedMcpServers = if (intent.checked) it.forwardedMcpServers + intent.serverName
+                    else it.forwardedMcpServers - intent.serverName
+                )
+            }
+
             is GatewaySettingsIntent.ToggleTool -> XRepo.gateway.update {
                 it.copy(
                     exposedTools = if (intent.checked) it.exposedTools + intent.toolName

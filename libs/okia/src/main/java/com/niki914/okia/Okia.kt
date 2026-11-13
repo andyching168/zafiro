@@ -158,7 +158,8 @@ internal class DefaultDependencies(
 
 // 默认 MCP 客户端装配：AutoDetect 包装两协议类（线缆共享 engine）。
 // engine 为 config.httpEngine 或新建默认（Q7 裁决：复用 host 注入的传输入口）。
-private fun buildDefaultMcpClient(engine: HttpEngine): McpClient {
+// 公开给不经 Okia 会话、直接对 MCP 服务器发现与调用工具的 host（如 Gateway 转发）。
+fun buildDefaultMcpClient(engine: HttpEngine = OkHttpEngine()): McpClient {
     val legacy = LegacyStreamableHttpMcpClient(engine)
     val discovery = DiscoveryStreamableHttpMcpClient(engine)
     return AutoDetectMcpClient(legacy, discovery)

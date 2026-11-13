@@ -23,14 +23,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.niki914.uikit.infra.ConfirmationLiquidDialog
-import com.niki914.uikit.infra.LiquidDialog
-import com.niki914.uikit.infra.component.MaterialTintLiquidButton
+import com.niki914.uikit.dialog.ZafiroConfirmationDialog
+import com.niki914.uikit.dialog.ZafiroDialog
+import com.niki914.uikit.dialog.ZafiroDialogButton
 import com.niki914.uikit.infra.component.SettingToggleItem
 import com.niki914.uikit.infra.component.SettingsGroupCard
 import com.niki914.uikit.infra.component.SettingsItemDivider
 import com.niki914.uikit.infra.nav.pageViewModel
 import com.niki914.zafiro.app.R
+import com.niki914.zafiro.app.ui.chat.composable.text.ToolResultText
 import com.niki914.zafiro.app.ui.model.CustomPyToolDeleteConfirmationState
 import com.niki914.zafiro.app.ui.model.CustomPyToolInlineError
 import com.niki914.zafiro.app.ui.model.CustomPyToolSaveProgress
@@ -39,7 +40,12 @@ import com.niki914.zafiro.app.ui.model.CustomPyToolSettingsIntent
 import com.niki914.zafiro.app.ui.model.CustomPyToolSettingsUiState
 import com.niki914.zafiro.app.ui.model.CustomPyToolSettingsViewModel
 import com.niki914.zafiro.app.ui.model.hasUnsavedChanges
+import com.niki914.zafiro.app.ui.model.unsavedFieldLabelRes
 import com.niki914.zafiro.app.ui.nav.CustomPyToolDetailPage
+import com.niki914.zafiro.app.ui.settings.form.EditableDetailFieldController
+import com.niki914.zafiro.app.ui.settings.form.EditableSettingsDetailChrome
+import com.niki914.zafiro.app.ui.settings.form.EditableSettingsDetailFormScaffold
+import com.niki914.zafiro.app.ui.settings.form.SettingControlledExpandableTextItem
 
 @Composable
 fun CustomPyToolDetailContent(
@@ -56,6 +62,9 @@ fun CustomPyToolDetailContent(
         isCreating = page.isCreating,
         hasUnsavedChanges = {
             uiState.formState.hasUnsavedChanges
+        },
+        unsavedFieldLabelRes = {
+            uiState.formState.unsavedFieldLabelRes()
         },
         onDelete = {
             viewModel.sendIntent(CustomPyToolSettingsIntent.RequestDelete)
@@ -269,7 +278,7 @@ private fun CustomPyToolDeleteConfirmationDialog(
     onDismissRequest: () -> Unit,
     onConfirmClick: () -> Unit,
 ) {
-    ConfirmationLiquidDialog(
+    ZafiroConfirmationDialog(
         visible = state != null,
         onDismissRequest = onDismissRequest,
         title = stringResource(R.string.custom_py_tool_delete_dialog_title),
@@ -326,7 +335,7 @@ private fun CustomPyToolSaveProgressDialog(
         }
     }
 
-    LiquidDialog(
+    ZafiroDialog(
         visible = progress != null,
         onDismissRequest = onAction,
         dismissOnBackgroundTap = false,
@@ -375,20 +384,10 @@ private fun CustomPyToolSaveProgressDialog(
             }
         },
         actions = {
-            MaterialTintLiquidButton(
+            ZafiroDialogButton(
                 text = spec.action,
                 onClick = onAction,
-                modifier = Modifier.weight(1f),
-                containerColor = if (spec.actionPrimary) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerHighest
-                },
-                contentColor = if (spec.actionPrimary) {
-                    MaterialTheme.colorScheme.onPrimary
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
+                isPrimary = spec.actionPrimary,
             )
         },
     )

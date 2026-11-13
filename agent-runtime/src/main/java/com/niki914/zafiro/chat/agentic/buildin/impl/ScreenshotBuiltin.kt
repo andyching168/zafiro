@@ -104,6 +104,9 @@ Returns an image reference (path, dimensions, size) on success.
     "display_id": {
       "type": "integer",
       "description": "Which screen to capture. Omit for the default (physical screen unless background virtual mode is on). 0 = physical screen; other values must be a virtual display id from virtual_display_list."
+    },
+    "ui_intent": {
+      "type": "string"
     }
   },
   "required": []

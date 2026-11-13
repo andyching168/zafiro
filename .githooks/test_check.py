@@ -175,6 +175,105 @@ class RawStringTest(unittest.TestCase):
         self.assertEqual(rules_hit('val a = """x"""\n// 不再走\n'), ["legacy-comment"])
 
 
+class UncancellableRunCatchingTest(unittest.TestCase):
+    def test_bare_run_catching_is_flagged(self):
+        self.assertEqual(rules_hit("    val r = runCatching { work() }\n"), ["uncancellable-run-catching"])
+
+    def test_receiver_run_catching_is_flagged(self):
+        self.assertEqual(rules_hit("    val r = obj.runCatching { work() }\n"), ["uncancellable-run-catching"])
+
+    def test_map_catching_is_flagged(self):
+        self.assertEqual(rules_hit("    val r = res.mapCatching { it.toString() }\n"), ["uncancellable-run-catching"])
+
+    def test_import_run_catching_is_flagged(self):
+        self.assertEqual(rules_hit("import kotlin.runCatching\n"), ["uncancellable-run-catching"])
+
+    def test_cancellable_variants_are_allowed(self):
+        source = (
+            "    val a = runCatchingCancellable { work() }\n"
+            "    val b = obj.runCatchingCancellable { work() }\n"
+            "    val c = res.mapCatchingCancellable { it.toString() }\n"
+        )
+        self.assertEqual(rules_hit(source), [])
+
+    def test_comment_is_not_flagged(self):
+        self.assertEqual(rules_hit("// runCatching { work() }\n"), [])
+
+    def test_string_literal_is_not_flagged(self):
+        self.assertEqual(rules_hit('val msg = "runCatching is not safe here"\n'), [])
+
+    def test_ignore_marker_allows(self):
+        source = "    runCatching { work() } // githooks:ignore uncancellable-run-catching\n"
+        findings, ignored = findings_for(source)
+        self.assertEqual(findings, [])
+        self.assertEqual(ignored, 1)
+
+
+class RunCatchingRequireServiceTest(unittest.TestCase):
+    def test_run_catching_cancellable_with_require_service_is_flagged(self):
+        self.assertEqual(
+            rules_hit("val s = runCatchingCancellable { requireService<Foo>() }\n"),
+            ["run-catching-require-service"],
+        )
+
+    def test_run_catching_with_require_service_is_flagged(self):
+        self.assertEqual(
+            rules_hit("val s = runCatching { requireService<Foo>() }\n"),
+            ["uncancellable-run-catching", "run-catching-require-service"],
+        )
+
+    def test_multiline_run_catching_require_service_is_flagged(self):
+        source = "val s = runCatchingCancellable {\n    requireService<Foo>()\n}\n"
+        self.assertEqual(
+            rules_hit(source),
+            ["run-catching-require-service", "run-catching-require-service"],
+        )
+
+    def test_find_service_is_allowed(self):
+        self.assertEqual(rules_hit("val s = findService<Foo>()\n"), [])
+
+    def test_standalone_require_service_is_allowed(self):
+        source = "class A {\n    fun f() {\n        val s = requireService<Foo>()\n    }\n}\n"
+        self.assertEqual(rules_hit(source), [])
+
+    def test_ignore_marker_allows(self):
+        source = "val s = runCatchingCancellable { requireService<Foo>() } // githooks:ignore run-catching-require-service\n"
+        findings, ignored = findings_for(source)
+        self.assertEqual(findings, [])
+        self.assertEqual(ignored, 1)
+
+
+class BareCatchTest(unittest.TestCase):
+    def test_catch_throwable_is_flagged(self):
+        self.assertEqual(rules_hit("    } catch (t: Throwable) {\n"), ["bare-catch"])
+
+    def test_catch_exception_is_flagged(self):
+        self.assertEqual(rules_hit("    } catch (e: Exception) {\n"), ["bare-catch"])
+
+    def test_catch_underscore_exception_is_flagged(self):
+        self.assertEqual(rules_hit("    } catch (_: Exception) {\n"), ["bare-catch"])
+
+    def test_catch_specific_exception_is_allowed(self):
+        source = (
+            "    } catch (e: IOException) {\n"
+            "    } catch (e: CancellationException) {\n"
+            "    } catch (e: NoSuchFieldException) {\n"
+        )
+        self.assertEqual(rules_hit(source), [])
+
+    def test_comment_is_not_flagged(self):
+        self.assertEqual(rules_hit("// } catch (e: Exception) {\n"), [])
+
+    def test_string_literal_is_not_flagged(self):
+        self.assertEqual(rules_hit('val s = "catch (e: Exception)"\n'), [])
+
+    def test_ignore_marker_allows(self):
+        source = "    } catch (e: Throwable) { // githooks:ignore bare-catch\n"
+        findings, ignored = findings_for(source)
+        self.assertEqual(findings, [])
+        self.assertEqual(ignored, 1)
+
+
 class ScopeTest(unittest.TestCase):
     def test_libs_is_excluded(self):
         self.assertTrue(excluded("libs/libterm/Foo.kt"))
@@ -186,6 +285,79 @@ class ScopeTest(unittest.TestCase):
         self.assertEqual(SEVERITY["inline-fqn"], "warn")
         self.assertEqual(SEVERITY["log-api"], "block")
         self.assertEqual(SEVERITY["log-tag"], "warn")
+        self.assertEqual(SEVERITY["uncancellable-run-catching"], "block")
+        self.assertEqual(SEVERITY["run-catching-require-service"], "block")
+        self.assertEqual(SEVERITY["bare-catch"], "warn")
+        self.assertEqual(SEVERITY["rounded-corner-shape"], "block")
+        self.assertEqual(SEVERITY["content-description-i18n"], "block")
+
+
+class RoundedCornerShapeTest(unittest.TestCase):
+    def test_rounded_corner_shape_call_is_flagged(self):
+        self.assertEqual(
+            rules_hit("    val shape = RoundedCornerShape(16.dp)\n"),
+            ["rounded-corner-shape"],
+        )
+
+    def test_rounded_corner_shape_import_is_flagged(self):
+        self.assertEqual(
+            rules_hit("import androidx.compose.foundation.shape.RoundedCornerShape\n"),
+            ["rounded-corner-shape"],
+        )
+
+    def test_comment_is_not_flagged(self):
+        self.assertEqual(rules_hit("    // RoundedCornerShape(16.dp)\n"), [])
+
+    def test_ignore_marker_allows(self):
+        self.assertEqual(
+            rules_hit("    val s = RoundedCornerShape(16.dp) // githooks:ignore rounded-corner-shape\n"),
+            [],
+        )
+
+
+class ContentDescriptionI18nTest(unittest.TestCase):
+    def test_string_resource_call_is_flagged(self):
+        self.assertEqual(
+            rules_hit('Icon(Icons.Default.Close, contentDescription = stringResource(R.string.exit))\n'),
+            ["content-description-i18n"],
+        )
+
+    def test_multiline_string_resource_is_flagged(self):
+        source = 'Icon(\n    contentDescription =\n        stringResource(R.string.exit)\n)\n'
+        self.assertEqual(
+            rules_hit(source),
+            ["content-description-i18n", "content-description-i18n"],
+        )
+
+    def test_non_ascii_literal_is_flagged(self):
+        self.assertEqual(
+            rules_hit('Icon(Icons.Default.Close, contentDescription = "退出搜索")\n'),
+            ["content-description-i18n"],
+        )
+
+    def test_english_literal_is_allowed(self):
+        self.assertEqual(
+            rules_hit('Icon(Icons.Default.Close, contentDescription = "Close")\n'),
+            [],
+        )
+
+    def test_null_content_description_is_allowed(self):
+        self.assertEqual(
+            rules_hit('Icon(Icons.Default.Close, contentDescription = null)\n'),
+            [],
+        )
+
+    def test_comment_is_not_flagged(self):
+        self.assertEqual(
+            rules_hit('// contentDescription = stringResource(R.string.exit)\n'),
+            [],
+        )
+
+    def test_ignore_marker_allows(self):
+        source = 'Icon(Icons.Default.Close, contentDescription = stringResource(R.string.exit)) // githooks:ignore content-description-i18n\n'
+        findings, ignored = findings_for(source)
+        self.assertEqual(findings, [])
+        self.assertEqual(ignored, 1)
 
 
 if __name__ == "__main__":

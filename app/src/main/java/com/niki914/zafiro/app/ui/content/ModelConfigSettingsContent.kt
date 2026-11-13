@@ -10,7 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
-import com.niki914.uikit.infra.ConfirmationLiquidDialog
+import com.niki914.uikit.dialog.ZafiroConfirmationDialog
 import com.niki914.uikit.infra.component.SettingNavigationItem
 import com.niki914.uikit.infra.component.SettingsGroupCard
 import com.niki914.uikit.infra.component.SettingsListPageContent
@@ -20,6 +20,7 @@ import com.niki914.zafiro.app.ui.model.ConfigureIntent
 import com.niki914.zafiro.app.ui.model.ConfigureScene
 import com.niki914.zafiro.app.ui.model.ConfigureViewModel
 import com.niki914.zafiro.app.ui.nav.TopBarActionSpec
+import com.niki914.zafiro.app.ui.settings.form.EditableSettingsDetailChrome
 
 /**
  * Model Configuration 一级页：System Prompt 卡片（点击进整页编辑）+ Saved Configuration 列表。
@@ -85,7 +86,7 @@ fun ModelConfigSettingsContent(
         }
     }
 
-    ConfirmationLiquidDialog(
+    ZafiroConfirmationDialog(
         visible = pendingDeleteConfigId != null,
         onDismissRequest = { pendingDeleteConfigId = null },
         title = stringResource(R.string.ui_settings_saved_configuration_delete_title),

@@ -24,7 +24,7 @@
 ├── agent-runtime/       # Agent 运行时：LLM 调用、工具/Skill/MCP 执行、Python 运行时
 ├── xsettings/           # 轻量配置模块（业务按需依赖）
 ├── store/               # Store 持久化、IPC 桥（XIpcBridge）
-├── ui-kit/              # 共享 Compose 组件、LiquidScreen 壳、导航
+├── ui-kit/              # 共享 Compose 组件（Zafiro* 元器件）、ZafiroScreen 壳、导航
 ├── remote-view/         # 跨进程 / 悬浮窗 RemoteView 视图
 ├── xposed-api/          # Xposed 事件类型、共享常量（主应用与宿主进程共享）
 ├── xposed-runtime/      # Xposed 运行时、Hook 基类
@@ -46,17 +46,17 @@ State 与 Effect 的区别是持久与一次性，分界的判据是「换个时
 
 本项目通过 LSPosed 对 com.heytap.speechassist 等应用做 Hook，将系统语音助手的回答换成 Zafiro Agent 回答，具体实现是通过 Binder + AgentRuntimeService。当前的实现重点是，复杂的数据结构从不穿过 Binder，IPC 传递纯语义数据（Thinking、Tools、Content）。宿主架构采用分层治理：上层 `*Hook`（如 `BreenoHook`）为纯胶水调度层，严禁堆砌反射与类名硬编码
 
-我们把取代原生 agent 的功能称为 takeover / 接管。宿主是比较边缘的业务，在重要决策时，不应该为了宿主的业务而去妥协，应该牺牲宿主
+我们把取代原生语音助手的功能称为 换源 / takeover / 接管。宿主是比较边缘的业务，在重要决策时，不应该为了宿主的业务而去妥协，应该牺牲宿主
 
 ### 主界面 / Home / Compose
 
-这些都是指应用的主入口，Compose UI，具体的对话是在 HomChatViewModel 内通过 Agent API 维护。Compose 必须是无状态的，从配套的 MVI ViewModel 里取数据
+这些都是指应用的主入口，Compose UI，具体的对话是在 HomeChatViewModel 内通过 Agent API 维护。Compose 必须是无状态的，从配套的 MVI ViewModel 里取数据
 
 这是整个应用的根基，它的重要性和优先级最高
 
 ### UI 框架 / ui-kit
 
-导航、导航栏、弹窗、设置项都用 ui-kit 里既定的那套，不要另起一套。实现涉及导航、ViewModel、弹窗的业务前 MUST 调研已有代码作为参考
+导航、导航栏、弹窗、设置项都用 ui-kit 里既定的那套，不要另起一套。业务组件统一使用 ui-kit 导出的 Zafiro* 基础元器件（ZafiroDialog 等），底层实现了多种主题分流。实现涉及导航、ViewModel、弹窗的业务前 MUST 调研已有代码作为参考
 
 #### 导航
 
@@ -66,19 +66,21 @@ push 分正推与从左推（onPushFromLeft）两个方向，返回要配对使�
 
 #### 导航栏与左右上角按钮
 
-导航栏指 LiquidScreen 顶部的动作条，只有左右两个图标槽，内容由页面通过 PageChromeContribution 覆盖，页面不自己画
+导航栏指 ZafiroTopBar，有两个图标槽，内容由页面通过 PageChromeContribution 覆盖，页面不自己画
 
 背景色与标题由滚动状态自行感知切换，大部分页面不需要参与；左右按钮通常指这两个图标槽
 
 #### 弹窗类
 
-约定使用 LiquidDialog（ConfirmationLiquidDialog、SingleChoiceLiquidDialog 等），它必须挂在 LiquidScreen 的内容树里，返回键由弹窗自己接管
+约定使用 ZafiroDialog（ZafiroConfirmationDialog、ZafiroSingleChoiceDialog、ZafiroInputDialog 等），它必须挂在 ZafiroScreen 的内容树里，返回键由弹窗自己接管
 
 BottomSheet 用 OptionSheet
 
 #### 设置项
 
-设置页、设置列表、设置详情统一用 ui-kit 的 Settings* 组件（页面骨架、分组卡片、行、分隔线都有现成的），如无明确要求，禁止手搓
+设置列表页统一基于 SettingsPageSpec + SettingsSpecPageContent，编辑详情页统一使用 EditableSettingsDetailChrome + FormSpec 骨架；底层通用卡片与行使用 ui-kit 的 Settings* 系列，如无明确要求，禁止手搓
+
+设置项读写需要经过 SettingsJsonCodecUtils 校验
 
 ### 对话列表
 
@@ -100,17 +102,13 @@ AI 对话通常是以 list 的形式存放 messages，同时只会有一个对�
 
 ### IPC
 
-目前来说，agent 的对话功能是限定在主进程之内的，虽然有一个宿主的业务，Agent 相关的调用逻辑依然用 Binder 包裹在主进程之内
+目前来说，Zafiro Agent 的对话功能是限定在主进程之内的，虽然有一个宿主的业务，Agent 相关的调用逻辑依然用 Binder 包裹在主进程之内
 
 项目通过 Chaquopy 实现 Python 能力支持，在单独的 py 进程中运行代码
 
 ### 日志与调试
 
-调试构建额外把同一条日志落到沙箱，如果 logcat 被冲掉了可以用 adb 把日志拉出来看
-
-- 调试版包名带 `.debug` 后缀（`com.niki914.zafiro.debug`），有独立沙箱与独立数据。release 版可提供 zafiro-mcp 用于真机调试。需要时先通过 mcp 调用 `load_skill('phone-use')`。可能需要先连上 adb 并 forward 8791 端口到 PC 才能调用
-- 落盘目录 `filesDir/logs/`，每次运行产生一个文件，文件名是 `<进程>-<MMdd-HHmmss>.log`：主进程 `main-*`，Chaquopy 进程 `python-*`
-- 单文件满 8MB 换下一个文件，目录内最多保留 10 个
+如果身处 lima Linux 环境, 请调用 `host-command-bridge` 来与主机 macOS 环境交互。调试构建额外把同一条日志落到沙箱，如果 logcat 被冲掉了可以用 adb 把日志拉出来看。详情通过调用 `zafiro-qa` 技能来了解
 
 ---
 
@@ -119,10 +117,15 @@ AI 对话通常是以 list 的形式存放 messages，同时只会有一个对�
 ### 共识
 
 - 若某项功能实现难度高（难度评分超过 6/10）且 ROI 较低，在着手开发前应先与用户协商功能范围
-- 没有明确要求提交时，不提交。等待用户验收
 - 提交信息和 PR 标题均使用英文，采用 `feat: did something` 这样的格式；标题简洁明了，不带模块名，补充说明写在正文中。PR 使用 gh CLI 完成
-- 未经允许禁止对做安卓做安装应用等写操作
 - 搜索用 `rg`，不要 `grep -r`。 `rg` 默认读 `.gitignore`，自动排除 `**/build/`；`grep -r` 会扫到 build 与 `.git`
+
+### 边界
+
+- 没有明确要求提交时，不提交。等待用户验收
+- 未经允许禁止对做安卓做安装应用等写操作
+- 用户提问（尤其是探讨、假设性问题或一般疑问句）时必须直接作答，严禁产生例如代码变更等副作用。典型反面例子：用户问“这个地方如果我做 XX 操作会怎样？”或询问某一情况，AI 却以发现了漏洞或其他原因擅自开始修改
+- 理解用户指令必须紧密结合上下文，严禁盲目粗暴操作。典型反面例子：用户要求“确保工作区的改动干净”，AI 却不过脑子直接全盘回退导致有效工作全部丢失
 
 ### 架构决策
 
@@ -137,10 +140,11 @@ AI 对话通常是以 list 的形式存放 messages，同时只会有一个对�
 
 ### 实现代码
 
+- 参考多个类似业务的实现，尤其是设置页表单
 - 坏味道由 `.githooks/` 在提交前拦（监视器锁、变化叙述注释、内联全限定名、绕过 Logger 的日志、日志 TAG 前缀）；规则、放行标记、按模块清理方式见 `.githooks/README.md`。需要提交时，无须提前阅读 Hooks，正常提交即可，有问题会被 Hooks 扫出
 - 不要使用后台任务进行编译或单测，使用同步方法
 - 禁止出现 [改两行 ui 字符串 -> 编译 -> 再改] 的行为，应该在确实需要时（比如做了重型重构后）编译
-- 开发过程中不实现多语言，仅实现英语。面向用户的文本放入 res，面向 Agent 的文本可硬编码
+- 开发过程中需要实现多语言。面向用户的文本放入 res，面向 Agent 的文本可硬编码
 
 ### 单测
 

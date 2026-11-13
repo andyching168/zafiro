@@ -1,5 +1,6 @@
 package com.niki914.zafiro.repo
 
+import com.niki914.uikit.base.ThemeStyle
 import com.niki914.zafiro.settings.model.RepetitionSensitivity
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -18,6 +19,9 @@ const val DEFAULT_COMPACTION_THRESHOLD_PERCENT: Int = 70
 internal data class AppStateSettings(
     @SerialName("onboarding_completed")
     val onboardingCompleted: Boolean = false,
+    /** Phone Use（屏幕控制）知情同意是否已获得用户授权。 */
+    @SerialName("phone_use_consent_granted")
+    val phoneUseConsentGranted: Boolean = false,
     @SerialName("last_opened_conversation_id")
     val lastOpenedConversationId: String = "",
     /** BCP-47 tag；空串 = 跟随系统语言。 */
@@ -32,6 +36,9 @@ internal data class AppStateSettings(
     /** 主题种子色 ARGB hex；空串 = 跟随壁纸动态色。 */
     @SerialName("theme_seed_color")
     val themeSeedColor: String = "FFFABD00",
+    /** 主题设计语言风格；liquid/md3/md3e。 */
+    @SerialName("theme_style")
+    val themeStyle: String = ThemeStyle.default().storageKey,
     /** Markdown 字体排版缩放比例；基准为 1.0f (100%)。 */
     @SerialName("markdown_scale")
     val markdownScale: Float = 1.0f,
@@ -53,9 +60,15 @@ internal data class AppStateSettings(
     /** 消息操作行（复制/重新生成/fork 等）是否常显。 */
     @SerialName("always_show_message_actions")
     val alwaysShowMessageActions: Boolean = true,
+    /** 是否总是展示工具调用的完整详细输出。 */
+    @SerialName("always_show_detailed_tool_output")
+    val alwaysShowDetailedToolOutput: Boolean = false,
     /** 是否启用 Agent 悬浮球。 */
     @SerialName("floating_ball_enabled")
     val floatingBallEnabled: Boolean = false,
+    /** 是否启用匿名体验改善计划数据上报；false = 仅保留基础冷启动与版本可用性统计。 */
+    @SerialName("telemetry_enabled")
+    val telemetryEnabled: Boolean = true,
     /** 是否启用常驻通知栏。 */
     @SerialName("resident_notification_enabled")
     val residentNotificationEnabled: Boolean = false,
@@ -65,6 +78,12 @@ internal data class AppStateSettings(
     /** 悬浮球在回合结束/审批到达时是否自动展开。 */
     @SerialName("floating_ball_auto_expand")
     val floatingBallAutoExpand: Boolean = true,
+    /** 悬浮球贴边停靠不透明度百分比（10..100，默认 60）。 */
+    @SerialName("floating_ball_opacity_percent")
+    val floatingBallOpacityPercent: Int = 60,
+    /** 悬浮球贴边收起深度（dp，0..35，默认 8）。 */
+    @SerialName("floating_ball_submerged_offset_dp")
+    val floatingBallSubmergedOffsetDp: Int = 8,
     /** 已经向用户弹过更新提示的远端版本号；空串 = 从未弹过。同一版本只提示一次。 */
     @SerialName("last_notified_update_version")
     val lastNotifiedUpdateVersion: String = "",
@@ -108,12 +127,19 @@ internal object AppStateSettingsCodec {
                     fixed.contextCompactionThresholdPercent == 0 -> 0
                     else -> fixed.contextCompactionThresholdPercent.coerceIn(30, 95)
                 }
+                val sanitizedThemeStyle = when (fixed.themeStyle) {
+                    "liquid", "md3", "md3e" -> fixed.themeStyle
+                    else -> ThemeStyle.default().storageKey
+                }
                 fixed.copy(
+                    themeStyle = sanitizedThemeStyle,
                     markdownScale = fixed.markdownScale.coerceIn(0.6f, 1.4f),
                     repetitionSensitivity = RepetitionSensitivity.fromWire(
                         fixed.repetitionSensitivity
                     ).wireValue,
                     contextCompactionThresholdPercent = sanitizedCompactionThreshold,
+                    floatingBallOpacityPercent = fixed.floatingBallOpacityPercent.coerceIn(10, 100),
+                    floatingBallSubmergedOffsetDp = fixed.floatingBallSubmergedOffsetDp.coerceIn(0, 35),
                 )
             }
         } catch (_: SerializationException) {

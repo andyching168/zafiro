@@ -5,7 +5,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.res.stringResource
-import com.niki914.uikit.infra.ConfirmationLiquidDialog
+import com.niki914.uikit.dialog.ZafiroConfirmationDialog
 import com.niki914.uikit.infra.nav.pageViewModel
 import com.niki914.zafiro.app.R
 import com.niki914.zafiro.app.ui.model.SkillDeleteConfirmationState
@@ -15,7 +15,9 @@ import com.niki914.zafiro.app.ui.model.SkillSettingsIntent
 import com.niki914.zafiro.app.ui.model.SkillSettingsUiState
 import com.niki914.zafiro.app.ui.model.SkillSettingsViewModel
 import com.niki914.zafiro.app.ui.model.hasUnsavedChanges
+import com.niki914.zafiro.app.ui.model.unsavedFieldLabelRes
 import com.niki914.zafiro.app.ui.nav.SkillDetailPage
+import com.niki914.zafiro.app.ui.settings.form.EditableSettingsDetailChrome
 
 @Composable
 fun SkillDetailContent(
@@ -29,6 +31,9 @@ fun SkillDetailContent(
         isCreating = false,
         hasUnsavedChanges = {
             uiState.formState.hasUnsavedChanges
+        },
+        unsavedFieldLabelRes = {
+            uiState.formState.unsavedFieldLabelRes()
         },
         onDelete = {
             viewModel.sendIntent(SkillSettingsIntent.RequestDelete)
@@ -129,7 +134,7 @@ private fun SkillDeleteConfirmationDialog(
     onDismissRequest: () -> Unit,
     onConfirmClick: () -> Unit,
 ) {
-    ConfirmationLiquidDialog(
+    ZafiroConfirmationDialog(
         visible = state != null,
         onDismissRequest = onDismissRequest,
         title = stringResource(R.string.skill_delete_dialog_title),

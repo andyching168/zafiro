@@ -11,12 +11,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.niki914.uikit.infra.ConfirmationLiquidDialog
-import com.niki914.uikit.infra.ProvideLiquidScreenContentForPreview
+import com.niki914.uikit.dialog.ZafiroConfirmationDialog
 import com.niki914.uikit.infra.component.SettingToggleItem
 import com.niki914.uikit.infra.component.SettingsGroupCard
 import com.niki914.uikit.infra.component.SettingsItemDivider
 import com.niki914.uikit.infra.nav.pageViewModel
+import com.niki914.uikit.screen.ProvideZafiroScreenContentForPreview
 import com.niki914.zafiro.app.R
 import com.niki914.zafiro.app.ui.model.TextActionDeleteConfirmationState
 import com.niki914.zafiro.app.ui.model.TextActionFormState
@@ -26,7 +26,11 @@ import com.niki914.zafiro.app.ui.model.TextActionSettingsIntent
 import com.niki914.zafiro.app.ui.model.TextActionSettingsUiState
 import com.niki914.zafiro.app.ui.model.TextActionSettingsViewModel
 import com.niki914.zafiro.app.ui.model.hasUnsavedChanges
+import com.niki914.zafiro.app.ui.model.unsavedFieldLabelRes
 import com.niki914.zafiro.app.ui.nav.TextActionDetailPage
+import com.niki914.zafiro.app.ui.settings.form.EditableSettingsDetailChrome
+import com.niki914.zafiro.app.ui.settings.form.EditableSettingsDetailFormScaffold
+import com.niki914.zafiro.app.ui.settings.form.SettingControlledExpandableTextItem
 
 @Composable
 fun TextActionsDetailContent(
@@ -41,6 +45,9 @@ fun TextActionsDetailContent(
         isCreating = page.isCreating,
         hasUnsavedChanges = {
             uiState.formState.hasUnsavedChanges
+        },
+        unsavedFieldLabelRes = {
+            uiState.formState.unsavedFieldLabelRes()
         },
         onDelete = {
             viewModel.sendIntent(TextActionSettingsIntent.RequestDelete)
@@ -219,7 +226,7 @@ private fun textActionInlineErrorText(error: TextActionInlineError?): String? {
 @Composable
 private fun TextActionsDetailContentPreview() {
     MaterialTheme {
-        ProvideLiquidScreenContentForPreview(topPadding = 0.dp) {
+        ProvideZafiroScreenContentForPreview(topPadding = 0.dp) {
             TextActionsDetailContentBody(
                 uiState = TextActionSettingsUiState(
                     items = emptyList(),
@@ -253,7 +260,7 @@ private fun TextActionDeleteConfirmationDialog(
     onDismissRequest: () -> Unit,
     onConfirmClick: () -> Unit,
 ) {
-    ConfirmationLiquidDialog(
+    ZafiroConfirmationDialog(
         visible = state != null,
         onDismissRequest = onDismissRequest,
         title = stringResource(R.string.text_action_delete_dialog_title),

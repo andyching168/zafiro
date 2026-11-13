@@ -5,7 +5,14 @@ import com.niki914.uikit.base.ComposeMVIViewModel
 import com.niki914.zafiro.api.AgentManager
 import com.niki914.zafiro.api.model.AgentState
 import com.niki914.zafiro.api.model.isRunning
+import com.niki914.zafiro.api.util.Debouncer
+import com.niki914.zafiro.api.util.debouncer
+import com.niki914.zafiro.api.util.runCatchingCancellable
+import com.niki914.zafiro.api.util.tryIgnore
+import com.niki914.zafiro.api.util.tryOrDefault
 import com.niki914.zafiro.app.conversation.ConversationRepo
+import com.niki914.zafiro.app.conversation.ConversationSearchRepo
+import com.niki914.zafiro.app.conversation.ConversationSearchResult
 import com.niki914.zafiro.app.conversation.ConversationSummary
 import com.niki914.zafiro.repo.PinnedConversation
 import com.niki914.zafiro.repo.XRepo
@@ -35,6 +42,14 @@ data class ConversationHistoryUiState(
     val selecting: Boolean = false,
     val selectedIds: Set<String> = emptySet(),
     val showBatchDeleteConfirmation: Boolean = false,
+    /** 搜索框是否处于激活展开态。 */
+    val isSearchActive: Boolean = false,
+    /** 搜索输入框的当前文本。非空时列表切换为搜索结果模式。 */
+    val searchQuery: String = "",
+    /** 搜索异步执行中（防抖后发起、结果到达前）。 */
+    val isSearching: Boolean = false,
+    /** 搜索结果列表；[searchQuery] 为空时始终为空。 */
+    val searchResults: List<ConversationSearchResult> = emptyList(),
 )
 
 sealed interface ConversationHistoryIntent {
@@ -58,6 +73,18 @@ sealed interface ConversationHistoryIntent {
 
     /** 会话删除失败（含活动会话删除失败）。 */
     data class DeleteFailed(val message: String) : ConversationHistoryIntent
+
+    /** 搜索输入文本变更：立即更新输入框文本，防抖后异步查询。 */
+    data class UpdateSearchQuery(val query: String) : ConversationHistoryIntent
+
+    /** 进入搜索激活态。 */
+    data object EnterSearch : ConversationHistoryIntent
+
+    /** 退出搜索模式并清空状态。 */
+    data object ExitSearch : ConversationHistoryIntent
+
+    /** 清空搜索：取消在途搜索任务，重置搜索状态。 */
+    data object ClearSearch : ConversationHistoryIntent
 }
 
 sealed interface ConversationHistoryEffect {
@@ -75,8 +102,9 @@ internal data class ConversationHistoryViewModelDependencies(
     val renameConversation: suspend (String, String) -> Unit,
     val forkConversation: suspend (String) -> String?,
     val setConversationPinned: suspend (String, Boolean) -> Unit,
+    val searchConversations: suspend (String) -> List<ConversationSearchResult>,
     val destroyAgent: (String) -> Unit = { id ->
-        runCatching {
+        tryIgnore {
             requireService<AgentManager>().destroy(
                 id
             )
@@ -86,8 +114,7 @@ internal data class ConversationHistoryViewModelDependencies(
         ConversationRepo.setHasUnread(id, unread)
     },
     val observeActiveStates: () -> Flow<Map<String, AgentState>> = {
-        runCatching { requireService<AgentManager>().activeStates }
-            .getOrDefault(MutableStateFlow(emptyMap()))
+        tryOrDefault(MutableStateFlow(emptyMap())) { requireService<AgentManager>().activeStates }
     },
 ) {
     companion object {
@@ -98,11 +125,11 @@ internal data class ConversationHistoryViewModelDependencies(
             renameConversation = { id, title -> ConversationRepo.renameConversation(id, title) },
             forkConversation = { id -> ConversationRepo.forkConversation(id) },
             setConversationPinned = { id, pinned -> XRepo.setConversationPinned(id, pinned) },
-            destroyAgent = { id -> runCatching { requireService<AgentManager>().destroy(id) } },
+            searchConversations = { query -> ConversationSearchRepo.searchConversations(query) },
+            destroyAgent = { id -> tryIgnore { requireService<AgentManager>().destroy(id) } },
             setHasUnread = { id, unread -> ConversationRepo.setHasUnread(id, unread) },
             observeActiveStates = {
-                runCatching { requireService<AgentManager>().activeStates }
-                    .getOrDefault(MutableStateFlow(emptyMap()))
+                tryOrDefault(MutableStateFlow(emptyMap())) { requireService<AgentManager>().activeStates }
             },
         )
     }
@@ -117,6 +144,8 @@ class ConversationHistoryViewModel internal constructor(
         >() {
 
     constructor() : this(ConversationHistoryViewModelDependencies.Default)
+
+    private val searchDebouncer: Debouncer = viewModelScope.debouncer(250L)
 
     override fun initUiState(): ConversationHistoryUiState =
         ConversationHistoryUiState(isLoading = true)
@@ -151,6 +180,27 @@ class ConversationHistoryViewModel internal constructor(
             is ConversationHistoryIntent.DeleteFailed -> updateState {
                 copy(deleteErrorMessage = intent.message)
             }
+
+            is ConversationHistoryIntent.UpdateSearchQuery -> updateSearchQuery(intent.query)
+            ConversationHistoryIntent.EnterSearch -> enterSearch()
+            ConversationHistoryIntent.ExitSearch -> exitSearch()
+            ConversationHistoryIntent.ClearSearch -> exitSearch()
+        }
+    }
+
+    private fun enterSearch() {
+        updateState { copy(isSearchActive = true) }
+    }
+
+    private fun exitSearch() {
+        searchDebouncer.cancel()
+        updateState {
+            copy(
+                isSearchActive = false,
+                searchQuery = "",
+                isSearching = false,
+                searchResults = emptyList(),
+            )
         }
     }
 
@@ -159,6 +209,24 @@ class ConversationHistoryViewModel internal constructor(
             copy(selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id)
         }
     }
+
+    private fun updateSearchQuery(query: String) {
+        updateState { copy(searchQuery = query) }
+        if (query.isBlank()) {
+            searchDebouncer.cancel()
+            updateState { copy(isSearching = false, searchResults = emptyList()) }
+            return
+        }
+        updateState { copy(isSearching = true) }
+        searchDebouncer.debounce {
+            val results = dependencies.searchConversations(query)
+            // 防抖回调到达时，若用户已清空搜索则丢弃结果
+            if (currentState.searchQuery == query) {
+                updateState { copy(isSearching = false, searchResults = results) }
+            }
+        }
+    }
+
 
     private var observeJob: Job? = null
 
@@ -220,11 +288,11 @@ class ConversationHistoryViewModel internal constructor(
     }
 
     private suspend fun clearUnread(id: String) {
-        runCatching { dependencies.setHasUnread(id, false) }
+        tryIgnore { dependencies.setHasUnread(id, false) }
     }
 
     private suspend fun loadPinnedSafely(): List<PinnedConversation> =
-        runCatching { dependencies.loadPinnedConversations() }.getOrDefault(emptyList())
+        tryOrDefault(emptyList()) { dependencies.loadPinnedConversations() }
 
     private suspend fun refreshPinned() {
         val pinned = loadPinnedSafely()
@@ -233,12 +301,12 @@ class ConversationHistoryViewModel internal constructor(
 
     private suspend fun delete(id: String) {
         updateState { copy(deleteErrorMessage = null) }
-        runCatching { dependencies.destroyAgent(id) }
+        tryIgnore { dependencies.destroyAgent(id) }
         if (id == currentState.activeConversationId) {
             sendEffect(ConversationHistoryEffect.DeleteActiveConversation(id))
             return
         }
-        runCatching { dependencies.deleteConversation(id) }.fold(
+        runCatchingCancellable { dependencies.deleteConversation(id) }.fold(
             onSuccess = { afterDelete(id) },
             onFailure = { throwable ->
                 updateState {
@@ -252,16 +320,16 @@ class ConversationHistoryViewModel internal constructor(
 
     /** 删除成功后的收尾：解置顶；活动会话由宿主删完后经同样路径收尾。列表行变动由 Room Flow 自动推送。 */
     private suspend fun afterDelete(id: String) {
-        runCatching { dependencies.setConversationPinned(id, false) }
+        tryIgnore { dependencies.setConversationPinned(id, false) }
         refreshPinned()
     }
 
     private suspend fun rename(id: String, title: String) {
-        runCatching { dependencies.renameConversation(id, title) }
+        tryIgnore { dependencies.renameConversation(id, title) }
     }
 
     private suspend fun fork(id: String) {
-        runCatching { dependencies.forkConversation(id) }.onSuccess { newId ->
+        runCatchingCancellable { dependencies.forkConversation(id) }.onSuccess { newId ->
             if (newId != null) {
                 sendEffect(ConversationHistoryEffect.OpenConversation(newId))
             }
@@ -269,7 +337,7 @@ class ConversationHistoryViewModel internal constructor(
     }
 
     private suspend fun setPinned(id: String, pinned: Boolean) {
-        runCatching { dependencies.setConversationPinned(id, pinned) }.onSuccess {
+        runCatchingCancellable { dependencies.setConversationPinned(id, pinned) }.onSuccess {
             refreshPinned()
         }
     }
@@ -278,7 +346,7 @@ class ConversationHistoryViewModel internal constructor(
         val ids = currentState.selectedIds
         if (ids.isEmpty()) return
         ids.forEach { id ->
-            runCatching { dependencies.setConversationPinned(id, pinned) }
+            tryIgnore { dependencies.setConversationPinned(id, pinned) }
         }
         refreshPinned()
     }
@@ -313,7 +381,7 @@ class ConversationHistoryViewModel internal constructor(
 
         var failureMessage: String? = null
         normalIds.forEach { id ->
-            runCatching {
+            runCatchingCancellable {
                 dependencies.destroyAgent(id)
                 dependencies.deleteConversation(id)
                 dependencies.setConversationPinned(id, false)
@@ -329,7 +397,7 @@ class ConversationHistoryViewModel internal constructor(
         }
 
         if (deleteActive) {
-            runCatching { dependencies.destroyAgent(activeId) }
+            tryIgnore { dependencies.destroyAgent(activeId) }
             sendEffect(ConversationHistoryEffect.DeleteActiveConversation(activeId))
         } else {
             refreshPinned()

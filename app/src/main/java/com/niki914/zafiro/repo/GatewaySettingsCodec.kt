@@ -22,6 +22,7 @@ internal object GatewaySettingsCodec {
     private const val KEY_NAME = "deviceName"
     private const val KEY_AUTO_CONNECT = "autoConnect"
     private const val KEY_EXPOSED_TOOLS = "exposedTools"
+    private const val KEY_FORWARDED_MCP = "forwardedMcpServers"
     private const val KEY_LOCK_TOUCH = "lockTouchDuringOperation"
 
     fun parse(json: String, cipher: SecretCipher): RuntimeGatewayConfig {
@@ -35,6 +36,8 @@ internal object GatewaySettingsCodec {
             autoConnect = obj.boolean(KEY_AUTO_CONNECT, default = true),
             exposedTools = (obj[KEY_EXPOSED_TOOLS] as? JsonArray)?.stringValues()?.toSet()
                 ?: RuntimeGatewayConfig.DEFAULT_EXPOSED_TOOLS,
+            forwardedMcpServers = (obj[KEY_FORWARDED_MCP] as? JsonArray)?.stringValues()?.toSet()
+                ?: emptySet(),
             lockTouchDuringOperation = obj.boolean(KEY_LOCK_TOUCH, default = false),
         )
     }
@@ -48,6 +51,7 @@ internal object GatewaySettingsCodec {
             KEY_NAME to JsonPrimitive(config.deviceName),
             KEY_AUTO_CONNECT to JsonPrimitive(config.autoConnect),
             KEY_EXPOSED_TOOLS to JsonArray(config.exposedTools.sorted().map { JsonPrimitive(it) }),
+            KEY_FORWARDED_MCP to JsonArray(config.forwardedMcpServers.sorted().map { JsonPrimitive(it) }),
             KEY_LOCK_TOUCH to JsonPrimitive(config.lockTouchDuringOperation),
         )
     ).toString()

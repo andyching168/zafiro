@@ -18,8 +18,8 @@ import com.niki914.uikit.infra.component.SettingsListPageContent
 import com.niki914.uikit.infra.nav.pageViewModel
 import com.niki914.zafiro.api.GatewayStatus
 import com.niki914.zafiro.app.R
-import com.niki914.zafiro.app.ui.content.SettingControlledExpandableTextItem
-import com.niki914.zafiro.app.ui.content.rememberEditableDetailFieldController
+import com.niki914.zafiro.app.ui.settings.form.SettingControlledExpandableTextItem
+import com.niki914.zafiro.app.ui.settings.form.rememberEditableDetailFieldController
 import com.niki914.zafiro.app.ui.model.GatewayPairingUi
 import com.niki914.zafiro.app.ui.model.GatewaySettingsIntent
 import com.niki914.zafiro.app.ui.model.GatewaySettingsViewModel
@@ -194,6 +194,28 @@ fun GatewaySettingsContent(
                         viewModel.sendIntent(GatewaySettingsIntent.ToggleTool(tool.name, checked))
                     },
                 )
+            }
+        }
+
+        if (uiState.mcpServers.isNotEmpty()) {
+            SettingsGroupCard(title = stringResource(R.string.gateway_section_mcp_forward)) {
+                Text(
+                    text = stringResource(R.string.gateway_mcp_forward_warning),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+                uiState.mcpServers.forEachIndexed { index, server ->
+                    if (index > 0) SettingsItemDivider()
+                    SettingToggleItem(
+                        title = server.name,
+                        description = server.url,
+                        checked = server.name in uiState.forwardedMcpServers,
+                        onCheckedChange = { checked ->
+                            viewModel.sendIntent(GatewaySettingsIntent.ToggleMcpServer(server.name, checked))
+                        },
+                    )
+                }
             }
         }
     }

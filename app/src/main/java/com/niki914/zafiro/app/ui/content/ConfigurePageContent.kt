@@ -7,15 +7,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.niki914.uikit.infra.ConfirmationLiquidDialog
-import com.niki914.uikit.infra.ProvideLiquidScreenContentForPreview
+import com.niki914.uikit.dialog.ZafiroConfirmationDialog
 import com.niki914.uikit.infra.component.SettingsDetailFormScaffold
+import com.niki914.uikit.screen.ProvideZafiroScreenContentForPreview
 import com.niki914.zafiro.app.R
 import com.niki914.zafiro.app.ui.model.ConfigureInlineError
 import com.niki914.zafiro.app.ui.model.ConfigureScene
 import com.niki914.zafiro.app.ui.model.ConfigureUiState
 import com.niki914.zafiro.app.ui.model.EndpointMismatch
 import com.niki914.zafiro.app.ui.model.ProviderSpecs
+import com.niki914.zafiro.app.ui.settings.form.EditableDetailFieldController
+import com.niki914.zafiro.app.ui.settings.form.rememberEditableDetailFieldController
 import com.niki914.zafiro.settings.model.LlmProtocol
 
 @Composable
@@ -141,7 +143,7 @@ internal fun EndpointMismatchDialog(
 ) {
     if (mismatch == null) return
     val isSwitch = mismatch.origin == EndpointMismatch.Origin.SwitchProtocol
-    ConfirmationLiquidDialog(
+    ZafiroConfirmationDialog(
         visible = true,
         onDismissRequest = onCancel,
         title = stringResource(R.string.ui_settings_configure_endpoint_mismatch_title),
@@ -177,7 +179,7 @@ internal fun EndpointMismatchDialog(
 @Composable
 private fun ConfigurePageContentPreview() {
     MaterialTheme {
-        ProvideLiquidScreenContentForPreview(topPadding = 0.dp) {
+        ProvideZafiroScreenContentForPreview(topPadding = 0.dp) {
             ConfigurePageContent(
                 uiState = ConfigureUiState(
                     scene = ConfigureScene.Onboarding,

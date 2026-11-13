@@ -23,8 +23,9 @@ android {
         applicationId = "com.niki914.zafiro"
         minSdk = 26
         targetSdk = 34
-        versionName = "1.8.0"
-        versionCode = 14
+        versionName = "1.10.1"
+        versionCode = 18
+        buildConfigField("String", "TELEMETRY_BASE_URL", "\"https://zafiro-telemetry.niki27687.workers.dev\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
@@ -33,12 +34,20 @@ android {
         }
     }
 
+    val packingDir = File(System.getProperty("user.home"), ".android_packing")
+    val signingPropsFile = File(packingDir, "signing.properties")
+
     signingConfigs {
         create("release") {
-            storeFile = file(project.property("RELEASE_STORE_FILE") as String)
-            storePassword = project.property("RELEASE_STORE_PASSWORD") as String
-            keyAlias = project.property("RELEASE_KEY_ALIAS") as String
-            keyPassword = project.property("RELEASE_KEY_PASSWORD") as String
+            if (signingPropsFile.exists()) {
+                val props = Properties().apply {
+                    signingPropsFile.inputStream().use { load(it) }
+                }
+                storeFile = File(packingDir, "zafiro.jks")
+                storePassword = props.getProperty("RELEASE_STORE_PASSWORD")
+                keyAlias = props.getProperty("RELEASE_KEY_ALIAS")
+                keyPassword = props.getProperty("RELEASE_KEY_PASSWORD")
+            }
         }
     }
 
@@ -84,6 +93,7 @@ dependencies {
     implementation(project(":business:files"))
     implementation(project(":business:application"))
     implementation(project(":business:notification"))
+    implementation(project(":business:remote"))
     implementation(project(":ui-kit"))
     implementation(project(":xposed-runtime"))
     implementation(project(":store"))
@@ -110,6 +120,7 @@ dependencies {
 
     // Material & AndroidX
     implementation("com.google.android.material:material:1.12.0")
+    implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.annotation:annotation:1.9.1")
     implementation("androidx.activity:activity-compose:1.4.0")
     implementation("androidx.documentfile:documentfile:1.0.1")

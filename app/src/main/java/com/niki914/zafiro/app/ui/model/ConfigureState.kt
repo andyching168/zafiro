@@ -1,11 +1,14 @@
+// githooks:ignore-file file-token-limit
 package com.niki914.zafiro.app.ui.model
 
+import android.content.Context
 import androidx.annotation.StringRes
 import androidx.lifecycle.viewModelScope
 import com.niki914.logging.Logger
 import com.niki914.okia.message.ThinkingLevel
 import com.niki914.uikit.base.ComposeMVIViewModel
 import com.niki914.zafiro.app.R
+import com.niki914.zafiro.app.ui.settings.form.buildFormSpec
 import com.niki914.zafiro.repo.CloudModelFacts
 import com.niki914.zafiro.repo.LlmConfigsDocument
 import com.niki914.zafiro.repo.ModelCatalog
@@ -13,10 +16,11 @@ import com.niki914.zafiro.repo.ModelCatalogApi
 import com.niki914.zafiro.repo.SavedLlmConfig
 import com.niki914.zafiro.repo.TokenCountText
 import com.niki914.zafiro.repo.XRepo
+import com.niki914.zafiro.api.util.Debouncer
+import com.niki914.zafiro.api.util.debouncer
+import com.niki914.zafiro.api.util.runCatchingCancellable
+import com.niki914.zafiro.api.util.tryIgnore
 import com.niki914.zafiro.settings.model.LlmProtocol
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
@@ -78,6 +82,7 @@ data class ConfigureUiState(
     @param:StringRes val endpointErrorResId: Int? = null,
     @param:StringRes val modelErrorResId: Int? = null,
     @param:StringRes val apiKeyErrorResId: Int? = null,
+    val promptInput: String = "",
     val proxyInput: String = "",
     @param:StringRes val proxyErrorResId: Int? = null,
     /** 单次输出上限输入框；未设置时回显默认值，清空 = 不设置（落默认值）。 */
@@ -108,14 +113,33 @@ data class ConfigureSnapshot(
     val protocolWireId: String,
     val thinkingLevelWire: String,
     val supportsImages: Boolean,
+    val prompt: String,
     val proxy: String,
     val maxTokens: String,
     val contextWindow: String,
 )
 
+val ConfigureFormSpec = buildFormSpec<ConfigureSnapshot, String> {
+    field("name", R.string.ui_settings_configure_name_label) { it.configName }
+    field("prompt", R.string.ui_settings_configure_prompt_label) { it.prompt }
+    field("proxy", R.string.ui_settings_configure_proxy_label) { it.proxy }
+    field("endpoint", R.string.ui_onboard_configure_endpoint_label) { it.endpoint }
+    field("model", R.string.ui_onboard_configure_model_label) { it.model }
+    field("apiKey", R.string.ui_onboard_configure_api_key_label) { it.apiKey }
+    field("protocol", R.string.ui_settings_configure_protocol_label) { it.protocolWireId }
+    field("thinking", R.string.ui_settings_configure_thinking_label) { it.thinkingLevelWire }
+    field("vision", R.string.ui_settings_configure_vision_label) { it.supportsImages }
+    field("maxTokens", R.string.ui_settings_configure_max_tokens_label) { it.maxTokens }
+    field("contextWindow", R.string.ui_settings_configure_context_window_label) { it.contextWindow }
+}
+
 val ConfigureUiState.hasUnsavedChanges: Boolean
     get() = scene != ConfigureScene.Onboarding &&
-            initialSettingsSnapshot?.let { it != toSettingsSnapshot() } == true
+            ConfigureFormSpec.hasChanges(initialSettingsSnapshot, toSettingsSnapshot())
+
+fun ConfigureUiState.unsavedFieldLabelRes(): List<Int> {
+    return ConfigureFormSpec.dirtyFieldLabelRes(initialSettingsSnapshot, toSettingsSnapshot())
+}
 
 sealed interface ConfigureInlineError {
     data class LoadFailed(val reason: ConfigureErrorReason.LoadSettingsFailed) :
@@ -145,6 +169,7 @@ sealed interface ConfigureIntent {
     data class SelectProtocol(val wireId: String) : ConfigureIntent
     data class UpdateThinkingLevel(val wireValue: String) : ConfigureIntent
     data class UpdateSupportsImages(val enabled: Boolean) : ConfigureIntent
+    data class UpdatePrompt(val value: String) : ConfigureIntent
     data class UpdateProxy(val value: String) : ConfigureIntent
     data class UpdateMaxTokens(val value: String) : ConfigureIntent
     data class UpdateContextWindow(val value: String) : ConfigureIntent
@@ -228,7 +253,7 @@ class ConfigureViewModel internal constructor(
     }
 
     private suspend fun refreshSavedConfigs() {
-        try {
+        tryIgnore {
             val document = dependencies.loadDocument()
             updateState {
                 copy(
@@ -236,8 +261,6 @@ class ConfigureViewModel internal constructor(
                     activeConfigId = document.activeId,
                 )
             }
-        } catch (_: Throwable) {
-            // 忽略失败，保留当前状态
         }
     }
 
@@ -254,7 +277,7 @@ class ConfigureViewModel internal constructor(
     private var initializedKey: Triple<ConfigureScene, String?, String?>? = null
 
     /** 在途的目录拉取（防抖 + 可取消）。 */
-    private var catalogFetchJob: Job? = null
+    private val catalogDebouncer: Debouncer = viewModelScope.debouncer(CATALOG_DEBOUNCE_MS)
 
     /** 上次已拉取的三元组（endpoint/apiKey/protocol），去重用。 */
     private var lastCatalogKey: CatalogKey? = null
@@ -292,6 +315,9 @@ class ConfigureViewModel internal constructor(
                 copy(supportsImages = intent.enabled)
             }
 
+            is ConfigureIntent.UpdatePrompt -> updateState {
+                copy(promptInput = intent.value, inlineError = null)
+            }
 
             is ConfigureIntent.UpdateProxy -> updateState {
                 copy(proxyInput = intent.value, proxyErrorResId = null, inlineError = null)
@@ -348,9 +374,8 @@ class ConfigureViewModel internal constructor(
         if (key == initializedKey) return
         // 拉取三元组跨初始化重置：不同配置页实例互不污染
         lastCatalogKey = null
-        catalogFetchJob?.cancel()
-        catalogFetchJob = null
-        try {
+        catalogDebouncer.cancel()
+        runCatchingCancellable {
             val document = dependencies.loadDocument()
             Logger.d(LOG_TAG, "initialize scene=$scene configs=${document.configs.size}")
             when (scene) {
@@ -368,8 +393,7 @@ class ConfigureViewModel internal constructor(
             initializedKey = key
             // 进页拉一次（Key 为空时内部短路，不发请求）
             scheduleCatalogFetch(immediate = true)
-        } catch (throwable: Throwable) {
-            if (throwable is CancellationException) throw throwable
+        }.onFailure { throwable ->
             val message = throwable.message ?: throwable::class.java.simpleName
             Logger.w(LOG_TAG, "initialize failed scene=$scene reason=$message")
             val reason = ConfigureErrorReason.LoadSettingsFailed(message)
@@ -406,6 +430,7 @@ class ConfigureViewModel internal constructor(
                 endpointErrorResId = null,
                 modelErrorResId = null,
                 apiKeyErrorResId = null,
+                promptInput = "",
                 proxyInput = "",
                 proxyErrorResId = null,
                 // 不预填：留空让云端/默认值生效（预填会钉死用户值，云端永远不生效）
@@ -458,6 +483,7 @@ class ConfigureViewModel internal constructor(
                 endpointErrorResId = null,
                 modelErrorResId = null,
                 apiKeyErrorResId = null,
+                promptInput = "",
                 proxyInput = "",
                 proxyErrorResId = null,
                 // 不预填：留空让云端/默认值生效（预填会钉死用户值，云端永远不生效）
@@ -506,6 +532,7 @@ class ConfigureViewModel internal constructor(
                 endpointErrorResId = null,
                 modelErrorResId = null,
                 apiKeyErrorResId = null,
+                promptInput = target.prompt,
                 proxyInput = target.proxy,
                 proxyErrorResId = null,
                 // 落盘原始文本：空串 = 未设置（旧格式的 0 已在 codec 层归一为空），填过才回显用户值
@@ -530,33 +557,31 @@ class ConfigureViewModel internal constructor(
      *  缓存语义：成功覆盖（含空结果，空 = 藏按钮）；失败与空值短路保留旧缓存，只记日志；
      *  仅当 modelInput 为空时用首个结果回填（手填内容永不覆盖）。 */
     private fun scheduleCatalogFetch(immediate: Boolean = false) {
-        catalogFetchJob?.cancel()
         // 注意：handleIntent 已跑在 viewModelScope 的 intent 串行通道里；
-        // 这里起子协程只为防抖 delay 不阻塞后续 intent，取消语义经 job 传递
-        catalogFetchJob = viewModelScope.launch {
-            if (!immediate) delay(CATALOG_DEBOUNCE_MS)
+        // 这里走 Debouncer 防抖，取消语义经 debouncer 传递
+        val delayMs = if (immediate) 0L else CATALOG_DEBOUNCE_MS
+        catalogDebouncer.debounce(delayMs) {
             val state = currentState
             val key = CatalogKey(
                 endpoint = state.endpointInput.trim(),
                 apiKey = state.apiKeyInput.trim(),
                 protocolWireId = state.protocolWireId,
             )
-            if (key == lastCatalogKey) return@launch
+            if (key == lastCatalogKey) return@debounce
             // 空值短路：Key 或 endpoint 为空直接不发，保留旧缓存
-            if (key.endpoint.isBlank() || key.apiKey.isBlank()) return@launch
+            if (key.endpoint.isBlank() || key.apiKey.isBlank()) return@debounce
             val protocol = LlmProtocol.fromWire(key.protocolWireId)
             val modelsUrl = EndpointInference.modelsUrl(key.endpoint, protocol)
-                ?: return@launch
+                ?: return@debounce
             lastCatalogKey = key
-            try {
+            runCatchingCancellable {
                 val catalog = dependencies.fetchModelCatalog(modelsUrl, key.apiKey, protocol)
                 // 云端事实随同一次响应落缓存：以 endpoint+model 为键，与「保存」解耦。
                 // 全缺字段（如 Google）时 facts 为空，不写，旧缓存保留。
                 if (catalog.facts.isNotEmpty()) {
-                    try {
+                    runCatchingCancellable {
                         dependencies.saveModelFacts(key.endpoint, catalog.facts)
-                    } catch (throwable: Throwable) {
-                        if (throwable is CancellationException) throw throwable
+                    }.onFailure { throwable ->
                         Logger.w(LOG_TAG, "save model facts failed: ${throwable.message}")
                     }
                 }
@@ -576,8 +601,7 @@ class ConfigureViewModel internal constructor(
                         copy(modelCatalog = ids)
                     }
                 }
-            } catch (throwable: Throwable) {
-                if (throwable is CancellationException) throw throwable
+            }.onFailure { throwable ->
                 Logger.w(LOG_TAG, "catalog fetch failed: ${throwable.message}")
             }
         }
@@ -827,7 +851,7 @@ class ConfigureViewModel internal constructor(
         updateState {
             copy(isSaving = true, inlineError = null)
         }
-        try {
+        runCatchingCancellable {
             val current = currentState
             val targetConfigId = current.editingConfigId ?: newConfigId()
             dependencies.upsertConfig(
@@ -855,8 +879,7 @@ class ConfigureViewModel internal constructor(
                 ConfigureScene.SettingsEdit,
                     -> sendEffect(ConfigureEffect.SettingsSaveSucceeded)
             }
-        } catch (throwable: Throwable) {
-            if (throwable is CancellationException) throw throwable
+        }.onFailure { throwable ->
             val message = throwable.message ?: throwable::class.java.simpleName
             Logger.w(LOG_TAG, "save failed reason=$message")
             val reason = ConfigureErrorReason.SaveSettingsFailed(message)
@@ -883,6 +906,7 @@ private fun ConfigureUiState.toSavedLlmConfig(): SavedLlmConfig {
         protocol = protocolWireId,
         thinkingLevel = thinkingLevelWire,
         supportsImages = supportsImages,
+        prompt = promptInput.trim(),
         proxy = proxyInput,
         maxTokensText = maxTokensInput.trim(),
         contextWindowText = contextWindowInput.trim(),
@@ -905,6 +929,7 @@ private fun ConfigureUiState.toSettingsSnapshot(): ConfigureSnapshot {
         protocolWireId = protocolWireId,
         thinkingLevelWire = thinkingLevelWire,
         supportsImages = supportsImages,
+        prompt = promptInput.trim(),
         proxy = proxyInput.trim(),
         maxTokens = maxTokensInput.trim(),
         contextWindow = contextWindowInput.trim(),

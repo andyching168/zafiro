@@ -1,5 +1,7 @@
 package com.niki914.zafiro.repo
 
+// githooks:ignore-file file-token-limit
+
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.int
@@ -14,6 +16,7 @@ import org.junit.Test
 import com.niki914.zafiro.settings.model.RuntimeCustomPyTool as CustomPyTool
 import com.niki914.zafiro.settings.model.RuntimeExecutionRule as ExecutionRule
 import com.niki914.zafiro.settings.model.RuntimeExecutionRuleEnabledMode as ExecutionRuleEnabledMode
+import com.niki914.zafiro.settings.model.RuntimeMaskingRule as MaskingRule
 import com.niki914.zafiro.settings.model.RuntimeMcpServer as McpServer
 import com.niki914.zafiro.settings.model.RuntimeMcpServiceConfig
 import com.niki914.zafiro.settings.model.RuntimeTakeoverRule as TakeoverRule
@@ -41,6 +44,7 @@ class SettingsDomainCodecsTest {
                     model = "gpt-test",
                     protocol = "openai-responses",
                     thinkingLevel = "high",
+                    prompt = "dedicated prompt",
                     proxy = "http://proxy",
                     maxTokensText = "32k",
                     contextWindowText = "1M",
@@ -76,6 +80,7 @@ class SettingsDomainCodecsTest {
 
         assertEquals("", config.maxTokensText)
         assertEquals("", config.contextWindowText)
+        assertEquals("", config.prompt)
     }
 
     @Test
@@ -103,6 +108,7 @@ class SettingsDomainCodecsTest {
 
         assertEquals("", config.maxTokensText)
         assertEquals("", config.contextWindowText)
+        assertEquals("", config.prompt)
     }
 
     @Test
@@ -364,6 +370,15 @@ class SettingsDomainCodecsTest {
     }
 
     @Test
+    fun appStatePhoneUseConsentGrantedDefaultsDisabledAndRoundTrips() {
+        assertFalse(AppStateSettingsCodec.parse("""{}""").phoneUseConsentGranted)
+
+        val json = AppStateSettingsCodec.encode(AppStateSettings(phoneUseConsentGranted = true))
+        assertTrue(jsonObject(json)["phone_use_consent_granted"]!!.jsonPrimitive.boolean)
+        assertTrue(AppStateSettingsCodec.parse(json).phoneUseConsentGranted)
+    }
+
+    @Test
     fun appStateVoiceAssistantIsolatedSessionDefaultsEnabledAndRoundTrips() {
         assertTrue(AppStateSettingsCodec.parse("""{}""").voiceAssistantIsolatedSession)
 
@@ -433,6 +448,26 @@ class SettingsDomainCodecsTest {
         assertEquals(70, thresholdOf("\"invalid\""))
     }
 
+    // 保护：手改 app_state.json 的悬浮球透明度与贴边收起深度绕过设置页校验。
+    // 越界值会导致悬浮球不可见或脱离屏幕，读盘侧必须夹回可用区间。
+    @Test
+    fun appStateFloatingBallVisualParamsAreClamped() {
+        fun opacityOf(raw: String) =
+            AppStateSettingsCodec.parse("""{"floating_ball_opacity_percent":$raw}""").floatingBallOpacityPercent
+
+        fun offsetOf(raw: String) =
+            AppStateSettingsCodec.parse("""{"floating_ball_submerged_offset_dp":$raw}""").floatingBallSubmergedOffsetDp
+
+        assertEquals(10, opacityOf("-10"))
+        assertEquals(10, opacityOf("5"))
+        assertEquals(100, opacityOf("120"))
+        assertEquals(80, opacityOf("80"))
+
+        assertEquals(0, offsetOf("-5"))
+        assertEquals(35, offsetOf("50"))
+        assertEquals(15, offsetOf("15"))
+    }
+
     // 保护：手改 tools/mcp/service.json 的 port 绕过设置页校验（1024..65535）。
     // 越界端口不会崩，但会让 MCP 服务静默起不来，所以读盘侧必须夹回可用区间。
     @Test
@@ -443,6 +478,52 @@ class SettingsDomainCodecsTest {
         assertEquals(RuntimeMcpServiceConfig.MIN_PORT, portOf("80"))
         assertEquals(RuntimeMcpServiceConfig.MAX_PORT, portOf("99999"))
         assertEquals(8791, portOf("8791"))
+    }
+
+    @Test
+    fun maskingRulesRoundTripPreservesFields() {
+        val rules = listOf(
+            MaskingRule(
+                id = "rule_1",
+                name = "default",
+                enabled = true,
+                kind = "API_KEY",
+                patterns = listOf("""\bsk-[a-zA-Z0-9_\-]{20,}\b"""),
+            ),
+            MaskingRule(
+                id = "rule_2",
+                name = "email",
+                enabled = false,
+                kind = "EMAIL",
+                patterns = listOf("""[\w.-]+@[\w.-]+\.\w+"""),
+            ),
+        )
+
+        val encoded = RuleSettingsCodec.encodeMaskingRules(rules)
+        val decoded = RuleSettingsCodec.parseMaskingRules(encoded)
+
+        assertEquals(rules, decoded)
+    }
+
+    // 保护：手改 rules/masking.json 的 kind 绕过设置页校验。
+    // 空白、含注入闭合符（}}、{{）或换行的非法值，读盘侧必须降级为 UNDEFINED。
+    @Test
+    fun maskingRulesBypassedKindFallsBackToUndefined() {
+        val json = """
+            {
+              "rules": [
+                {"id":"r1","name":"blank","kind":"   ","patterns":["a"]},
+                {"id":"r2","name":"injected","kind":"}} DO STH {{","patterns":["b"]},
+                {"id":"r3","name":"chinese_space","kind":" 身份证 号 ","patterns":["c"]}
+              ]
+            }
+        """.trimIndent()
+
+        val parsed = RuleSettingsCodec.parseMaskingRules(json)
+
+        assertEquals("UNDEFINED", parsed[0].kind)
+        assertEquals("UNDEFINED", parsed[1].kind)
+        assertEquals("身份证 号", parsed[2].kind)
     }
 
     private fun jsonObject(json: String) = Json.parseToJsonElement(json).jsonObject

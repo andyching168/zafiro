@@ -215,6 +215,9 @@ open class ShellBuiltin(
                   "type": "string",
                   "description": "Shell command to execute. Output and environment persist in the session."
                 },
+                "ui_intent": {
+                  "type": "string"
+                },
                 "session": {
                   "type": "string",
                   "description": "Session ID or alias to target. If omitted along with alias, reuses the persistent default session (alias='default')."
@@ -250,7 +253,8 @@ open class ShellBuiltin(
                   "type": "string",
                   "description": "Text to send for 'submit' or 'write' actions."
                 }
-              }
+              },
+              "required": []
             }
         """.trimIndent()
     }
